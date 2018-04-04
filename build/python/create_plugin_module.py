@@ -81,13 +81,16 @@ BEGIN
 END
 """
 
-CPP_TEMPLATE = """#include <nscapi/nscapi_helper_singleton.hpp>
+CPP_TEMPLATE = """#include "module.hpp"
+
+#include <nscapi/nscapi_helper_singleton.hpp>
 #include <nscapi/nscapi_plugin_impl.hpp>
 #include <nscapi/nscapi_plugin_wrapper.hpp>
-
-#include "module.hpp"
-#include <nscapi/command_client.hpp>
 #include <nscapi/nscapi_protobuf_functions.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+#include <nscapi/nscapi_protobuf.hpp>
+
+#include <nscapi/command_client.hpp>
 
 namespace ch = nscapi::command_helper;
 
@@ -154,9 +157,9 @@ bool {{module.name}}Module::unloadModule() {
  * @return status code
  */
 NSCAPI::nagiosReturn {{module.name}}Module::handleRAWCommand(const std::string &request, std::string &response) {
+	Plugin::QueryResponseMessage response_message;
 	try {
 		Plugin::QueryRequestMessage request_message;
-		Plugin::QueryResponseMessage response_message;
 		request_message.ParseFromString(request);
 		nscapi::protobuf::functions::make_return_header(response_message.mutable_header(), request_message.header());
 
@@ -227,15 +230,21 @@ NSCAPI::nagiosReturn {{module.name}}Module::handleRAWCommand(const std::string &
 			}
 		}
 {% endif %}
-		response_message.SerializeToString(&response);
-		return NSCAPI::cmd_return_codes::isSuccess;
 	} catch (const std::exception &e) {
-		nscapi::protobuf::functions::create_simple_query_response_unknown("", std::string("Failed to process command : ") + e.what(), response);
-		return NSCAPI::cmd_return_codes::isSuccess;
+        response_message.clear_payload();
+        ::Plugin::QueryResponseMessage::Response *payload = response_message.add_payload();
+        payload->set_command("");
+        payload->set_result(Plugin::Common_ResultCode_UNKNOWN);
+        payload->add_lines()->set_message(std::string("Failed to process command : ") + utf8::utf8_from_native(e.what()));
 	} catch (...) {
-		nscapi::protobuf::functions::create_simple_query_response_unknown("", "Failed to process command", response);
-		return NSCAPI::cmd_return_codes::isSuccess;
+        response_message.clear_payload();
+        ::Plugin::QueryResponseMessage::Response *payload = response_message.add_payload();
+        payload->set_command("");
+        payload->set_result(Plugin::Common_ResultCode_UNKNOWN);
+        payload->add_lines()->set_message("Failed to process command ");
 	}
+    response_message.SerializeToString(&response);
+    return NSCAPI::cmd_return_codes::isSuccess;
 }
 
 void {{module.name}}Module::registerCommands(boost::shared_ptr<nscapi::command_proxy> proxy) {
@@ -243,11 +252,27 @@ void {{module.name}}Module::registerCommands(boost::shared_ptr<nscapi::command_p
 	registry.command()
 {% for cmd in module.commands %}
 {% if cmd.alias and cmd.alias|length == 1 %}
-		("{{cmd.name}}", "{{cmd.alias[0]}}",
-		"{{cmd.description}}")
+        (
+            "{{cmd.name}}", "{{cmd.alias[0]}}",
+            "{{cmd.description}}"
+{% if "query" in cmd.types %}
+            "\\n\\n"
+            "The {{cmd.name}} command is a query based command which means it has a filter where you can use a filter expression with filter keywords to define which rows are relevant to the check.\\n"
+            "The filter is written using the filter query language and in it you can use various filter keywords to define the filtering logic.\\n"
+            "The filter keywords can also be used to create the bound expressions for the warning and critical which defines when a check returns warning or critical."
+{% endif %}
+        )
 {% else %}
-		("{{cmd.name}}",
-		"{{cmd.description}}")
+        (
+            "{{cmd.name}}",
+            "{{cmd.description}}"
+{% if "query" in cmd.types %}
+            "\\n\\n"
+            "The {{cmd.name}} command is a query based command which means it has a filter where you can use a filter expression with filter keywords to define which rows are relevant to the check.\\n"
+            "The filter is written using the filter query language and in it you can use various filter keywords to define the filtering logic.\\n"
+            "The filter keywords can also be used to create the bound expressions for the warning and critical which defines when a check returns warning or critical."
+{% endif %}
+        )
 {% endif %}
 {% endfor %}
 		;
@@ -282,34 +307,21 @@ void {{module.name}}Module::handleMessageRAW(std::string data) {
 }
 {% endif %}
 
-{% if module.channels == "raw" %}
+{% if module.channels %}
 NSCAPI::nagiosReturn {{module.name}}Module::handleRAWNotification(const char* char_channel, const std::string &request, std::string &response) {
 	const std::string channel = char_channel;
+    Plugin::SubmitResponseMessage response_message;
 	try {
+{% if module.channels == "raw" %}
 		if (!impl_) {
 			return NSCAPI::cmd_return_codes::returnIgnored;
 		}
 		Plugin::SubmitRequestMessage request_message;
-		Plugin::SubmitResponseMessage response_message;
 		request_message.ParseFromString(request);
 		nscapi::protobuf::functions::make_return_header(response_message.mutable_header(), request_message.header());
 		impl_->handleNotification(channel, request_message, &response_message);
-		response_message.SerializeToString(&response);
-		return NSCAPI::cmd_return_codes::isSuccess;
-	} catch (const std::exception &e) {
-		nscapi::protobuf::functions::create_simple_submit_response(channel, "", Plugin::Common_Result_StatusCodeType_STATUS_ERROR, std::string("Failed to process submission on ") + channel + ": " + e.what(), response);
-		return NSCAPI::cmd_return_codes::isSuccess;
-	} catch (...) {
-		nscapi::protobuf::functions::create_simple_submit_response(channel, "", Plugin::Common_Result_StatusCodeType_STATUS_ERROR, "Failed to process submission on: " + channel, response);
-		return NSCAPI::cmd_return_codes::isSuccess;
-	}
-}
-{% elif module.channels %}
-NSCAPI::nagiosReturn {{module.name}}Module::handleRAWNotification(const char* char_channel, const std::string &request, std::string &response) {
-	const std::string channel = char_channel;
-	try {
+{% else %}
 		Plugin::SubmitRequestMessage request_message;
-		Plugin::SubmitResponseMessage response_message;
 		request_message.ParseFromString(request);
 		nscapi::protobuf::functions::make_return_header(response_message.mutable_header(), request_message.header());
 
@@ -323,15 +335,20 @@ NSCAPI::nagiosReturn {{module.name}}Module::handleRAWNotification(const char* ch
 				impl_->handleNotification(channel, request_payload, response_payload, request_message);
 			}
 		}
-		response_message.SerializeToString(&response);
-		return NSCAPI::cmd_return_codes::isSuccess;
+{% endif %}
 	} catch (const std::exception &e) {
-		nscapi::protobuf::functions::create_simple_submit_response(channel, "", Plugin::Common_Result_StatusCodeType_STATUS_ERROR, std::string("Failed to process submission on ") + channel + ": " + e.what(), response);
-		return NSCAPI::cmd_return_codes::isSuccess;
+        Plugin::SubmitResponseMessage::Response *payload = response_message.add_payload();
+        payload->set_command("");
+        payload->mutable_result()->set_message(std::string("Failed to process submission on ") + channel + ": " + utf8::utf8_from_native(e.what()));
+        payload->mutable_result()->set_code(Plugin::Common_Result_StatusCodeType_STATUS_ERROR);
 	} catch (...) {
-		nscapi::protobuf::functions::create_simple_submit_response(channel, "", Plugin::Common_Result_StatusCodeType_STATUS_ERROR, "Failed to process submission on: " + channel, response);
-		return NSCAPI::cmd_return_codes::isSuccess;
+        Plugin::SubmitResponseMessage::Response *payload = response_message.add_payload();
+        payload->set_command("");
+        payload->mutable_result()->set_message(std::string("Failed to process submission on ") + channel);
+        payload->mutable_result()->set_code(Plugin::Common_Result_StatusCodeType_STATUS_ERROR);
 	}
+    response_message.SerializeToString(&response);
+    return NSCAPI::cmd_return_codes::isSuccess;
 }
 {% endif %}
 
@@ -804,10 +821,11 @@ class Command:
 	raw_mapping = False
 	nagios = False
 
-	def __init__(self, name, description, alias = []):
+	def __init__(self, name, description, types = [], alias = []):
 		self.name = name
 		self.description = description
 		self.alias = alias
+		self.types = types
 		self.legacy = False
 		self.request = False
 		self.no_mapping = False
@@ -830,6 +848,7 @@ def parse_commands(data):
 			no_mapping = False
 			raw_mapping = False
 			nagios = False
+			types = ""
 			if key == "fallback" and value:
 				command_fallback = True
 			if key == "fallback" and value == 'raw':
@@ -840,6 +859,8 @@ def parse_commands(data):
 					desc = value['desc']
 				elif 'description' in value:
 					desc = value['description']
+				if 'type' in value:
+					types = value['type']
 				if 'legacy' in value and value['legacy']:
 					legacy = True
 				if 'request' in value and value['request']:
@@ -861,7 +882,7 @@ def parse_commands(data):
 			else:
 				desc = value
 			if not key == "fallback":
-				cmd = Command(key, desc, alias)
+				cmd = Command(key, desc, types.split(","), alias)
 				if legacy:
 					cmd.legacy = True
 				if nagios:

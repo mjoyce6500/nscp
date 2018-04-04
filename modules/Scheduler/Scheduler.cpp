@@ -1,27 +1,29 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "Scheduler.h"
-#include <strEx.h>
-#include <time.h>
-#include <utils.h>
 
 #include <nscapi/nscapi_core_helper.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
 #include <nscapi/nscapi_settings_helper.hpp>
+#include <nscapi/nscapi_protobuf.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
 #include <nscapi/macros.hpp>
 
 namespace sh = nscapi::settings_helper;
@@ -40,18 +42,18 @@ bool Scheduler::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 	schedules_.set_path(settings.alias().get_settings_path("schedules"));
 
 	settings.alias().add_path_to_settings()
-		("SCHEDULER SECTION", "Section for the Scheduler module.")
+		("Scheduler", "Section for the Scheduler module.")
 
 		;
 
 	settings.alias().add_key_to_settings()
-		("threads", sh::int_fun_key<unsigned int>(boost::bind(&schedules::scheduler::set_threads, &scheduler_, _1), 5),
-			"THREAD COUNT", "Number of threads to use.")
+		("threads", sh::int_fun_key(boost::bind(&schedules::scheduler::set_threads, &scheduler_, _1), 5),
+			"Threads", "Number of threads to use.")
 		;
 
 	settings.alias().add_path_to_settings()
 		("schedules", sh::fun_values_path(boost::bind(&Scheduler::add_schedule, this, _1, _2)),
-			"SCHEDULER SECTION", "Section for the Scheduler module.",
+			"Schedules", "Section for the Scheduler module.",
 			"SCHEDULE", "For more configuration options add a dedicated section")
 		;
 
@@ -74,6 +76,7 @@ bool Scheduler::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 	settings.notify();
 
 	schedules_.ensure_default();
+	schedules_.add_samples(get_settings_proxy());
 
 	BOOST_FOREACH(const schedules::schedule_handler::object_list_type::value_type &o, schedules_.get_object_list()) {
 		if (o->duration && (*o->duration).total_seconds() == 0) {
@@ -174,7 +177,7 @@ bool Scheduler::handle_schedule(schedules::target_object item) {
 			NSC_DEBUG_MSG("Filter not matched for: " + item->get_alias() + " so nothing is reported");
 		}
 		return true;
-	} catch (nscapi::nscapi_exception &e) {
+	} catch (nsclient::nsclient_exception &e) {
 		NSC_LOG_ERROR_EXR("Failed to register command: ", e);
 		return false;
 	} catch (std::exception &e) {
@@ -195,6 +198,8 @@ void Scheduler::fetchMetrics(Plugin::MetricsMessage::Response *response) {
 		boost::uint64_t errors__ = scheduler_.get_scheduler().get_metric_errors();
 		boost::uint64_t threads = scheduler_.get_scheduler().get_metric_threads();
 		boost::uint64_t queue = scheduler_.get_scheduler().get_metric_ql();
+		boost::uint64_t avgtime = scheduler_.get_scheduler().get_avg_time();
+		boost::uint64_t rate = scheduler_.get_scheduler().get_metric_rate();
 
 		Plugin::Common::Metric *m = bundle->add_value();
 		m->set_key("jobs");
@@ -211,6 +216,12 @@ void Scheduler::fetchMetrics(Plugin::MetricsMessage::Response *response) {
 		m = bundle->add_value();
 		m->set_key("queue");
 		m->mutable_value()->set_int_data(queue);
+		m = bundle->add_value();
+		m->set_key("avgtime");
+		m->mutable_value()->set_int_data(avgtime);
+		m = bundle->add_value();
+		m->set_key("rate");
+		m->mutable_value()->set_int_data(rate);
 	} else {
 		Plugin::Common::Metric *m = bundle->add_value();
 		m->set_key("metrics.available");

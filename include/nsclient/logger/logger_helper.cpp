@@ -1,23 +1,26 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <nsclient/logger/logger_helper.hpp>
 
-#include <format.hpp>
-#include <nscp_string.hpp>
+#include <str/format.hpp>
+#include <str/utils.hpp>
 #include <utf8.hpp>
 
 #include <boost/date_time.hpp>
@@ -70,14 +73,14 @@ std::pair<bool, std::string> nsclient::logging::logger_helper::render_console_me
 	try {
 		Plugin::LogEntry message;
 		if (!message.ParseFromString(data)) {
-			log_fatal("Failed to parse message: " + format::strip_ctrl_chars(data));
+			log_fatal("Failed to parse message: " + str::format::strip_ctrl_chars(data));
 			return std::make_pair(true, "ERROR");
 		}
 
 		for (int i = 0; i < message.entry_size(); i++) {
 			const ::Plugin::LogEntry::Entry &msg = message.entry(i);
 			std::string tmp = msg.message();
-			strEx::s::replace(tmp, "\n", "\n    -    ");
+			str::utils::replace(tmp, "\n", "\n    -    ");
 			if (oneline) {
 				ss << msg.file()
 					<< "("
@@ -90,8 +93,8 @@ std::pair<bool, std::string> nsclient::logging::logger_helper::render_console_me
 			} else {
 				if (i > 0)
 					ss << " -- ";
-				ss << strEx::s::lpad(render_log_level_short(msg.level()), 1)
-					<< " " << strEx::s::rpad(msg.sender(), 10)
+				ss << str::format::lpad(render_log_level_short(msg.level()), 1)
+					<< " " << str::format::rpad(msg.sender(), 10)
 					<< " " + msg.message()
 					<< "\n";
 				if (msg.level() == ::Plugin::LogEntry_Entry_Level_LOG_ERROR) {
@@ -108,9 +111,9 @@ std::pair<bool, std::string> nsclient::logging::logger_helper::render_console_me
 		return std::make_pair(is_error, ss.str());
 #endif
 	} catch (std::exception &e) {
-		log_fatal("Failed to parse data from: " + format::strip_ctrl_chars(data) + ": " + e.what());
+		log_fatal("Failed to parse data from: " + str::format::strip_ctrl_chars(data) + ": " + e.what());
 	} catch (...) {
-		log_fatal("Failed to parse data from: " + format::strip_ctrl_chars(data));
+		log_fatal("Failed to parse data from: " + str::format::strip_ctrl_chars(data));
 	}
 	return std::make_pair(true, "ERROR");
 }

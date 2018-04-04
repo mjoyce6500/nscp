@@ -1,21 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "threaded_logger.hpp"
 
+#include <iostream>
 
 const static std::string QUIT_MESSAGE = "$$QUIT$$";
 const static std::string CONFIGURE_MESSAGE = "$$CONFIGURE$$";
@@ -49,7 +53,7 @@ namespace nsclient {
 						} else if (data.size() > SET_CONFIG_MESSAGE.size() && data.substr(0, SET_CONFIG_MESSAGE.size()) == SET_CONFIG_MESSAGE) {
 							background_logger_->set_config(data.substr(SET_CONFIG_MESSAGE.size()));
 						} else {
-							if (background_logger_->is_console()) {
+							if (!background_logger_ || background_logger_->is_console()) {
 								std::pair<bool, std::string> m = logger_helper::render_console_message(is_oneline(), data);
 								if (!is_no_std_err() && m.first)
 									std::cerr << m.second;

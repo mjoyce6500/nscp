@@ -1,27 +1,35 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
+
+#include "plugin_interface.hpp"
+
+#include <nsclient/logger/logger.hpp>
+
+#include <str/xtos.hpp>
+#include <utf8.hpp>
+
 #include <boost/shared_ptr.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread.hpp>
-
-#include "NSCPlugin.h"
-#include <nsclient/logger/logger.hpp>
-#include <strEx.h>
+#include <boost/algorithm/string/case_conv.hpp>
 
 namespace nsclient {
 	class commands : boost::noncopyable {
@@ -43,7 +51,7 @@ namespace nsclient {
 			std::string name;
 		};
 
-		typedef boost::shared_ptr<NSCPlugin> plugin_type;
+		typedef boost::shared_ptr<nsclient::core::plugin_interface> plugin_type;
 		typedef std::map<unsigned long, plugin_type> plugin_list_type;
 		typedef std::map<std::string, command_info> description_list_type;
 		typedef std::map<std::string, plugin_type> command_list_type;
@@ -98,7 +106,7 @@ namespace nsclient {
 		void remove_plugin(unsigned long id) {
 			boost::unique_lock<boost::shared_mutex> writeLock(mutex_, boost::get_system_time() + boost::posix_time::seconds(10));
 			if (!writeLock.owns_lock()) {
-				log_error(__FILE__, __LINE__, "Failed to get mutex in remove_plugin for plugin id: " + strEx::s::xtos(id));
+				log_error(__FILE__, __LINE__, "Failed to get mutex in remove_plugin for plugin id: " + str::xtos(id));
 				return;
 			}
 			command_list_type::iterator it = commands_.begin();
@@ -127,7 +135,7 @@ namespace nsclient {
 			}
 			std::string lc = make_key(cmd);
 			if (!have_plugin(plugin_id))
-				throw command_exception("Failed to find plugin: " + strEx::s::xtos(plugin_id) + " {" + unsafe_get_all_plugin_ids() + "}");
+				throw command_exception("Failed to find plugin: " + str::xtos(plugin_id) + " {" + unsafe_get_all_plugin_ids() + "}");
 			if (commands_.find(lc) != commands_.end()) {
 				log_info(__FILE__, __LINE__, "Duplicate command", cmd);
 			}
@@ -144,7 +152,7 @@ namespace nsclient {
 			}
 			std::string lc = make_key(cmd);
 			if (!have_plugin(plugin_id))
-				throw command_exception("Failed to find plugin: " + strEx::s::xtos(plugin_id) + " {" + unsafe_get_all_plugin_ids() + "}");
+				throw command_exception("Failed to find plugin: " + str::xtos(plugin_id) + " {" + unsafe_get_all_plugin_ids() + "}");
 			command_list_type::iterator it = commands_.find(lc);
 			if (it == commands_.end()) {
 				log_info(__FILE__, __LINE__, "Command not found: ", cmd);
@@ -162,7 +170,7 @@ namespace nsclient {
 			}
 			std::string lc = make_key(cmd);
 			if (!have_plugin(plugin_id))
-				throw command_exception("Failed to find plugin: " + strEx::s::xtos(plugin_id) + " {" + unsafe_get_all_plugin_ids() + "}");
+				throw command_exception("Failed to find plugin: " + str::xtos(plugin_id) + " {" + unsafe_get_all_plugin_ids() + "}");
 			descriptions_[lc].description = desc;
 			descriptions_[lc].plugin_id = plugin_id;
 			descriptions_[lc].name = cmd;
@@ -175,7 +183,7 @@ namespace nsclient {
 			std::string ret;
 			std::pair<unsigned long, plugin_type> cit;
 			BOOST_FOREACH(cit, plugins_) {
-				ret += strEx::s::xtos(cit.first) + "(" + utf8::cvt<std::string>(cit.second->getFilename()) + "), ";
+				ret += str::xtos(cit.first) + "(" + utf8::cvt<std::string>(cit.second->getModule()) + "), ";
 			}
 			return ret;
 		}
@@ -245,7 +253,7 @@ namespace nsclient {
 			}
 			std::pair<unsigned long, plugin_type> cit;
 			BOOST_FOREACH(cit, plugins_) {
-				lst.push_back(strEx::s::xtos(cit.first));
+				lst.push_back(str::xtos(cit.first));
 			}
 			return lst;
 		}

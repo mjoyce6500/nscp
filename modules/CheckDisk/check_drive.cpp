@@ -1,34 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "check_drive.hpp"
 
-#ifdef WIN32
-#include <Windows.h>
-#endif
-
-#include <boost/bind.hpp>
-#include <boost/tuple/tuple.hpp>
-#include <boost/program_options.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/enable_shared_from_this.hpp>
-
-#include <char_buffer.hpp>
-#include <error.hpp>
-#include <format.hpp>
+#include <nsclient/nsclient_exception.hpp>
 
 #include <nscapi/nscapi_program_options.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
@@ -38,6 +29,22 @@
 #include <parsers/filter/cli_helper.hpp>
 #include <parsers/where/filter_handler_impl.hpp>
 #include <parsers/where/helpers.hpp>
+
+#include <char_buffer.hpp>
+#include <error/error.hpp>
+#include <str/format.hpp>
+
+#include <boost/bind.hpp>
+#include <boost/tuple/tuple.hpp>
+#include <boost/program_options.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/enable_shared_from_this.hpp>
+
+#ifdef WIN32
+#include <Windows.h>
+#include <winioctl.h>
+#endif
+
 
 namespace npo = nscapi::program_options;
 namespace po = boost::program_options;
@@ -127,6 +134,14 @@ struct filter_obj {
 		, unreadable(true) {};
 
 	std::string get_drive(parsers::where::evaluation_context) const { return drive.letter; }
+	std::string get_letter(parsers::where::evaluation_context) const {
+		if (drive.letter.size() >= 2) {
+			if (drive.letter[1] == ':') {
+				return drive.letter.substr(0, 1);
+			}
+		}
+		return "";
+	}
 	std::string get_name(parsers::where::evaluation_context) const { return drive.name; }
 	std::string get_id(parsers::where::evaluation_context) const { return drive.id; }
 	std::string get_drive_or_id(parsers::where::evaluation_context) const { return drive.letter.empty() ? drive.id : drive.letter; }
@@ -134,17 +149,17 @@ struct filter_obj {
 	std::string get_flags(parsers::where::evaluation_context) const { 
 		std::string ret;
 		if ((drive.flags & drive_container::df_mounted) == drive_container::df_mounted)
-			strEx::append_list(ret, "mounted");
+			str::format::append_list(ret, "mounted");
 		if ((drive.flags & drive_container::df_hotplug) == drive_container::df_hotplug)
-			strEx::append_list(ret, "hotplug");
+			str::format::append_list(ret, "hotplug");
 		if ((drive.flags & drive_container::df_removable) == drive_container::df_removable)
-			strEx::append_list(ret, "removable");
+			str::format::append_list(ret, "removable");
 		if ((drive.flags & drive_container::df_readable) == drive_container::df_readable)
-			strEx::append_list(ret, "readable");
+			str::format::append_list(ret, "readable");
 		if ((drive.flags & drive_container::df_writable) == drive_container::df_writable)
-			strEx::append_list(ret, "writable");
+			str::format::append_list(ret, "writable");
 		if ((drive.flags & drive_container::df_erasable) == drive_container::df_erasable)
-			strEx::append_list(ret, "erasable");
+			str::format::append_list(ret, "erasable");
 		return ret;
 	}
 
@@ -163,19 +178,19 @@ struct filter_obj {
 	}
 
 	std::string get_user_free_human(parsers::where::evaluation_context context) {
-		return format::format_byte_units(get_user_free(context));
+		return str::format::format_byte_units(get_user_free(context));
 	}
 	std::string get_total_free_human(parsers::where::evaluation_context context) {
-		return format::format_byte_units(get_total_free(context));
+		return str::format::format_byte_units(get_total_free(context));
 	}
 	std::string get_drive_size_human(parsers::where::evaluation_context context) {
-		return format::format_byte_units(get_drive_size(context));
+		return str::format::format_byte_units(get_drive_size(context));
 	}
 	std::string get_total_used_human(parsers::where::evaluation_context context) {
-		return format::format_byte_units(get_total_used(context));
+		return str::format::format_byte_units(get_total_used(context));
 	}
 	std::string get_user_used_human(parsers::where::evaluation_context context) {
-		return format::format_byte_units(get_user_used(context));
+		return str::format::format_byte_units(get_user_used(context));
 	}
 
 	std::string get_type_as_string(parsers::where::evaluation_context context) {
@@ -271,7 +286,7 @@ parsers::where::node_type calculate_total_used(boost::shared_ptr<filter_obj> obj
 	if (unit == "%") {
 		number = (static_cast<double>(object->get_drive_size(context))*number) / 100.0;
 	} else {
-		number = format::decode_byte_units(number, unit);
+		number = str::format::decode_byte_units(number, unit);
 	}
 	return parsers::where::factory::create_int(number);
 }
@@ -284,7 +299,7 @@ parsers::where::node_type calculate_user_used(boost::shared_ptr<filter_obj> obje
 	if (unit == "%") {
 		number = (static_cast<double>(object->get_user_free(context))*number) / 100.0;
 	} else {
-		number = format::decode_byte_units(number, unit);
+		number = str::format::decode_byte_units(number, unit);
 	}
 	return parsers::where::factory::create_int(number);
 }
@@ -334,6 +349,7 @@ struct filter_obj_handler : public native_context {
 			("name", &filter_obj::get_name, "Descriptive name of drive")
 			("id", &filter_obj::get_id, "Drive or id of drive")
 			("drive", &filter_obj::get_drive, "Technical name of drive")
+			("letter", &filter_obj::get_letter, "Letter the drive is mountedd on")
 			("flags", &filter_obj::get_flags, "String representation of flags")
 			("drive_or_id", &filter_obj::get_drive_or_id, "Drive letter if present if not use id")
 			("drive_or_name", &filter_obj::get_drive_or_name, "Drive letter if present if not use name")
@@ -429,7 +445,7 @@ public:
 		, ptrGetVolumeNameForVolumeMountPointW(NULL)
 		, ptrGetVolumeInformationByHandleW(NULL)
 		, ptrGetVolumePathNamesForVolumeNameW(NULL) {
-		hLib = ::LoadLibrary(_TEXT("KERNEL32"));
+		hLib = ::LoadLibrary(L"KERNEL32");
 		if (hLib) {
 			ptrFindFirstVolumeW = (typeFindFirstVolumeW)::GetProcAddress(hLib, "FindFirstVolumeW");
 			ptrFindNextVolumeW = (typeFindNextVolumeW)::GetProcAddress(hLib, "FindNextVolumeW");
@@ -561,7 +577,7 @@ public:
 			if (dwErr == ERROR_PATH_NOT_FOUND)
 				return false;
 			if (dwErr != ERROR_NOT_READY)
-				name = _T("Failed to get volume information ") + volume + _T(": ") + utf8::cvt<std::wstring>(error::lookup::last_error());
+				name = L"Failed to get volume information " + volume + L": " + utf8::cvt<std::wstring>(error::lookup::last_error());
 		} else {
 			name = volumeName.get();
 			fs = fileSysName.get();
@@ -678,7 +694,7 @@ void find_all_volumes(std::list<drive_container> &drives, std::vector<std::strin
 
 drive_container get_dc_from_string(std::wstring folder, volume_helper &helper) {
 	std::wstring volume = helper.GetVolumeNameForVolumeMountPoint(folder);
-	unsigned long long type;
+	unsigned long long type = 0;
 	std::string title = "";
 	drive_container::drive_flags flags = drive_container::df_none;
 	if (!volume.empty()) {
@@ -704,7 +720,7 @@ void find_all_drives(std::list<drive_container> &drives, std::vector<std::string
 			i += drv.size()+1;
 		}
 	} else
-		throw nscp_exception("Failed to get volume list: " + error::lookup::last_error());
+		throw nsclient::nsclient_exception("Failed to get volume list: " + error::lookup::last_error());
 }
 
 std::list<drive_container> find_drives(std::vector<std::string> drives) {
@@ -722,7 +738,7 @@ std::list<drive_container> find_drives(std::vector<std::string> drives) {
 		} else {
 			std::wstring drive = utf8::cvt<std::wstring>(d);
 			if (d.length() == 1)
-				drive = drive + _T(":");
+				drive = drive + L":";
 			ret.push_back(get_dc_from_string(drive, helper));
 		}
 	}
@@ -739,7 +755,7 @@ void check_drive::check(const Plugin::QueryRequestMessage::Request &request, Plu
 
 	filter_type filter;
 	filter_helper.add_options("used > 80%", "used > 90%", "mounted = 1", filter.get_filter_syntax(), "unknown");
-	filter_helper.add_syntax("${status} ${problem_list}", filter.get_filter_syntax(), "${drive_or_name}: ${used}/${size} used", "${drive_or_id}", "%(status): No drives found", "%(status) All %(count) drive(s) are ok");
+	filter_helper.add_syntax("${status} ${problem_list}", "${drive_or_name}: ${used}/${size} used", "${drive_or_id}", "%(status): No drives found", "%(status) All %(count) drive(s) are ok");
 	filter_helper.get_desc().add_options()
 		("drive", po::value<std::vector<std::string>>(&drives),
 			"The drives to check.\nMultiple options can be used to check more then one drive or wildcards can be used to indicate multiple drives to check. Examples: drive=c, drive=d:, drive=*, drive=all-volumes, drive=all-drives")

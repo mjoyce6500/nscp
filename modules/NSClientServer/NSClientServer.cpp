@@ -1,26 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "NSClientServer.h"
-
-#include <boost/assign.hpp>
-
-#include <strEx.h>
-#include <time.h>
 #include "handler_impl.hpp"
+
 #include <nscapi/nscapi_settings_helper.hpp>
 #include <nscapi/nscapi_core_helper.hpp>
 #include <socket/socket_settings_helper.hpp>
@@ -30,7 +29,10 @@
 #include <nscapi/nscapi_protobuf.hpp>
 #include <nscapi/nscapi_common_options.hpp>
 
-#include <settings/config.hpp>
+#include <str/utils.hpp>
+#include <time.h>
+
+#include <boost/assign.hpp>
 
 namespace sh = nscapi::settings_helper;
 
@@ -50,7 +52,7 @@ bool NSClientServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode
 
 	settings.alias().add_key_to_settings()
 
-		("performance data", sh::bool_fun_key<bool>(boost::bind(&NSClientServer::set_perf_data, this, _1), true),
+		("performance data", sh::bool_fun_key(boost::bind(&NSClientServer::set_perf_data, this, _1), true),
 			"PERFORMANCE DATA", "Send performance data back to Nagios (set this to 0 to remove all performance data).")
 
 		;
@@ -61,7 +63,7 @@ bool NSClientServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode
 
 	settings.alias().add_parent("/settings/default").add_key_to_settings()
 
-		("password", sh::string_fun_key<std::string>(boost::bind(&NSClientServer::set_password, this, _1), ""),
+		("password", sh::string_fun_key(boost::bind(&NSClientServer::set_password, this, _1), ""),
 			DEFAULT_PASSWORD_NAME, DEFAULT_PASSWORD_DESC)
 
 		;
@@ -145,14 +147,14 @@ bool NSClientServer::isPasswordOk(std::string remotePassword) {
 }
 
 void split_to_list(std::list<std::string> &list, const std::string str, const std::string key) {
-	BOOST_FOREACH(const std::string &s, strEx::s::splitEx(str, std::string("&"))) {
+	BOOST_FOREACH(const std::string &s, str::utils::split_lst(str, std::string("&"))) {
 		list.push_back(key + "=" + s);
 	}
 }
 
 void log_bad_command(const std::string &cmd) {
 	if (cmd == "check_cpu" || cmd == "check_uptime" || cmd == "check_memory") {
-		NSC_LOG_ERROR(cmd + std::string(" failed to execute have you loaded CheckSystem? ([" MAIN_MODULES_SECTION "] CheckSystem=enabled)"));
+		NSC_LOG_ERROR(cmd + std::string(" failed to execute have you loaded CheckSystem? (CheckSystem=enabled under modules)"));
 	} else {
 		NSC_LOG_ERROR("Unknown command: " + cmd);
 	}
@@ -208,13 +210,13 @@ check_nt::packet NSClientServer::handle(check_nt::packet p) {
 		buffer = buffer.substr(0, pos);
 	}
 
-	strEx::s::token pwd = strEx::s::getToken(buffer, '&');
+	str::utils::token pwd = str::utils::getToken(buffer, '&');
 	if (!isPasswordOk(pwd.first)) {
 		return check_nt::packet("ERROR: Invalid password.");
 	}
 	if (pwd.second.empty())
 		return check_nt::packet("ERROR: No command specified.");
-	strEx::s::token cmd = strEx::s::getToken(pwd.second, '&');
+	str::utils::token cmd = str::utils::getToken(pwd.second, '&');
 	if (cmd.first.empty())
 		return check_nt::packet("ERROR: No command specified.");
 
@@ -226,7 +228,9 @@ check_nt::packet NSClientServer::handle(check_nt::packet p) {
 	switch (c) {
 	case REQ_CPULOAD:
 		cmd.first = "check_cpu";
-		split_to_list(args, cmd.second, "time");
+		BOOST_FOREACH(const std::string &s, str::utils::split_lst(cmd.second, std::string("&"))) {
+			args.push_back("time=" + s + "m");
+		}
 		break;
 	case REQ_UPTIME:
 		cmd.first = "check_uptime";
@@ -295,7 +299,7 @@ check_nt::packet NSClientServer::handle(check_nt::packet p) {
 
 	std::string response;
 	nscapi::core_helper ch(get_core(), get_id());
-	NSC_DEBUG_MSG("Real command: " + cmd.first + " " + strEx::s::joinEx(args, " "));
+	NSC_DEBUG_MSG("Real command: " + cmd.first + " " + str::utils::joinEx(args, " "));
 	if (!ch.simple_query(cmd.first, args, response)) {
 		log_bad_command(cmd.first);
 		return check_nt::packet("ERROR: Could not complete the request check log file for more information.");
@@ -305,10 +309,10 @@ check_nt::packet NSClientServer::handle(check_nt::packet p) {
 	if (!message.ParseFromString(response))
 		return check_nt::packet("ERROR: Failed to parse data from: " + cmd.first);
 	if (message.payload_size() != 1)
-		return check_nt::packet("ERROR: Command returned invalid number of payloads: " + cmd.first + ", " + strEx::s::xtos(message.payload_size()));
+		return check_nt::packet("ERROR: Command returned invalid number of payloads: " + cmd.first + ", " + str::xtos(message.payload_size()));
 	const ::Plugin::QueryResponseMessage::Response &payload = message.payload(0);
 	if (payload.lines_size() != 1) {
-		return check_nt::packet("ERROR: Invalid number of lines returned from command: " + cmd.first + ", " + strEx::s::xtos(payload.lines_size()));
+		return check_nt::packet("ERROR: Invalid number of lines returned from command: " + cmd.first + ", " + str::xtos(payload.lines_size()));
 	}
 	const ::Plugin::QueryResponseMessage::Response::Line &line = payload.lines(0);
 
@@ -331,11 +335,11 @@ check_nt::packet NSClientServer::handle(check_nt::packet p) {
 	case REQ_FILEAGE:
 		if (line.perf_size() < 1)
 			return check_nt::packet("ERROR: No performance data from command: " + cmd.first);
-		return check_nt::packet(strEx::s::xtos_non_sci(extract_perf_value_i(line.perf(0)) / 60) + "&" + line.message());
+		return check_nt::packet(str::xtos_non_sci(extract_perf_value_i(line.perf(0)) / 60) + "&" + line.message());
 
 	case REQ_SERVICESTATE:	// Some check_nt commands return the return code (coded as a string)
 	case REQ_PROCSTATE:
-		return check_nt::packet(strEx::s::xtos(payload.result()) + "& " + line.message());
+		return check_nt::packet(str::xtos(payload.result()) + "& " + line.message());
 	}
 
 	return check_nt::packet("ERROR: Unknown command " + cmd.first);

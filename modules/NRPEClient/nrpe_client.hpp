@@ -1,30 +1,40 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
 #include <nscapi/nscapi_protobuf.hpp>
+#include <nscapi/nscapi_helper_singleton.hpp>
+
+#include <nscapi/macros.hpp>
+
 #include <client/command_line_parser.hpp>
 #include <nrpe/packet.hpp>
 #include <nrpe/client/nrpe_client_protocol.hpp>
 #include <socket/client.hpp>
 
+#include <boost/tuple/tuple.hpp>
+
 namespace nrpe_client {
 	struct connection_data : public socket_helpers::connection_info {
 		int buffer_length;
+		std::string encoding;
 		boost::shared_ptr<socket_helpers::client::client_handler> handler;
 
 		connection_data(client::destination_container source, client::destination_container target, boost::shared_ptr<socket_helpers::client::client_handler> handler) : buffer_length(0), handler(handler) {
@@ -59,6 +69,7 @@ namespace nrpe_client {
 			timeout = target.timeout;
 			retry = target.retry;
 			buffer_length = target.get_int_data("payload length", 1024);
+			encoding = target.get_string_data("encoding");
 
 			if (target.has_data("no ssl"))
 				ssl.enabled = !target.get_bool_data("no ssl");
@@ -119,7 +130,7 @@ namespace nrpe_client {
 			if (request_message.payload_size() == 0) {
 				std::string command = get_command("");
 				boost::tuple<int, std::string> ret = send(con, command);
-				strEx::s::token rdata = strEx::s::getToken(ret.get<1>(), '|');
+				str::utils::token rdata = str::utils::getToken(ret.get<1>(), '|');
 				nscapi::protobuf::functions::append_simple_query_response_payload(response_message.add_payload(), command, ret.get<0>(), rdata.first, rdata.second);
 			} else {
 				for (int i = 0; i < request_message.payload_size(); i++) {
@@ -129,7 +140,7 @@ namespace nrpe_client {
 						data += "!" + request_message.payload(i).arguments(a);
 					}
 					boost::tuple<int, std::string> ret = send(con, data);
-					strEx::s::token rdata = strEx::s::getToken(ret.get<1>(), '|');
+					str::utils::token rdata = str::utils::getToken(ret.get<1>(), '|');
 					nscapi::protobuf::functions::append_simple_query_response_payload(response_message.add_payload(), command, ret.get<0>(), rdata.first, rdata.second);
 				}
 			}
@@ -150,7 +161,7 @@ namespace nrpe_client {
 				}
 				boost::tuple<int, std::string> ret = send(con, data);
 				bool wentOk = ret.get<0>() != NSCAPI::query_return_codes::returnUNKNOWN;
-				nscapi::protobuf::functions::append_simple_submit_response_payload(response_message.add_payload(), command, wentOk ? Plugin::Common_Result_StatusCodeType_STATUS_OK : Plugin::Common_Result_StatusCodeType_STATUS_ERROR, ret.get<1>());
+				nscapi::protobuf::functions::append_simple_submit_response_payload(response_message.add_payload(), command, wentOk, ret.get<1>());
 			}
 			return true;
 		}
@@ -187,7 +198,14 @@ namespace nrpe_client {
 				if (con.ssl.enabled)
 					return boost::make_tuple(NSCAPI::query_return_codes::returnUNKNOWN, "SSL support not available (compiled without USE_SSL)");
 #endif
-				nrpe::packet packet = nrpe::packet::make_request(data, con.buffer_length);
+
+				std::string encoded_data;
+				if (con.encoding.empty()) {
+					encoded_data = utf8::to_system(utf8::cvt<std::wstring>(data));
+				} else {
+					encoded_data = utf8::to_encoding(utf8::cvt<std::wstring>(data), con.encoding);
+				}
+				nrpe::packet packet = nrpe::packet::make_request(encoded_data, con.buffer_length);
 				socket_helpers::client::client<nrpe::client::protocol> client(con, handler_);
 				client.connect();
 				std::list<nrpe::packet> responses = client.process_request(packet);
@@ -199,7 +217,14 @@ namespace nrpe_client {
 				BOOST_FOREACH(const nrpe::packet &p, responses) {
 					payload += p.getPayload();
 				}
-				return boost::make_tuple(result, payload);
+
+				std::string decoded_response;
+				if (con.encoding.empty()) {
+					decoded_response = utf8::cvt<std::string>(utf8::to_unicode(payload));
+				} else {
+					decoded_response = utf8::cvt<std::string>(utf8::from_encoding(payload, con.encoding));
+				}
+				return boost::make_tuple(result, decoded_response);
 			} catch (nrpe::nrpe_exception &e) {
 				return boost::make_tuple(NSCAPI::query_return_codes::returnUNKNOWN, std::string("NRPE Packet error: ") + e.what());
 			} catch (std::runtime_error &e) {

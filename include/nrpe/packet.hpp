@@ -1,28 +1,34 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <types.hpp>
-#include <string>
-#include <unicode_char.hpp>
-#include <boost/asio/buffer.hpp>
 #include <swap_bytes.hpp>
-#include <strEx.h>
+#include <str/xtos.hpp>
 #include <utils.h>
+#include <types.hpp>
+
+#include <boost/asio/buffer.hpp>
+
+#include <string>
+#include <stdio.h>
+#include <cstring>
 
 namespace nrpe {
 	class data {
@@ -193,14 +199,14 @@ namespace nrpe {
 			if (buffer == NULL)
 				throw nrpe::nrpe_exception("No buffer.");
 			if (length != get_packet_length())
-				throw nrpe::nrpe_exception("Invalid packet length: " + strEx::s::xtos(length) + " != " + strEx::s::xtos(get_packet_length()) + " configured payload is: " + strEx::s::xtos(get_payload_length()));
+				throw nrpe::nrpe_exception("Invalid packet length: " + str::xtos(length) + " != " + str::xtos(get_packet_length()) + " configured payload is: " + str::xtos(get_payload_length()));
 			const nrpe::data::packet *p = reinterpret_cast<const nrpe::data::packet*>(buffer);
 			type_ = swap_bytes::ntoh<int16_t>(p->packet_type);
 			if (type_ != nrpe::data::queryPacket && type_ != nrpe::data::responsePacket  && type_ != nrpe::data::moreResponsePacket)
-				throw nrpe::nrpe_exception("Invalid packet type: " + strEx::s::xtos(type_));
+				throw nrpe::nrpe_exception("Invalid packet type: " + str::xtos(type_));
 			version_ = swap_bytes::ntoh<int16_t>(p->packet_version);
 			if (version_ != nrpe::data::version2)
-				throw nrpe::nrpe_exception("Invalid packet version." + strEx::s::xtos(version_));
+				throw nrpe::nrpe_exception("Invalid packet version." + str::xtos(version_));
 			crc32_ = swap_bytes::ntoh<u_int32_t>(p->crc32_value);
 			// Verify CRC32
 			// @todo Fix this, currently we need a const buffer so we cannot change the CRC to 0.
@@ -211,7 +217,7 @@ namespace nrpe {
 			calculatedCRC32_ = calculate_crc32(tb, get_packet_length());
 			delete[] tb;
 			if (crc32_ != calculatedCRC32_)
-				throw nrpe::nrpe_exception("Invalid checksum in NRPE packet: " + strEx::s::xtos(crc32_) + "!=" + strEx::s::xtos(calculatedCRC32_));
+				throw nrpe::nrpe_exception("Invalid checksum in NRPE packet: " + str::xtos(crc32_) + "!=" + str::xtos(calculatedCRC32_));
 			// Verify CRC32 end
 			result_ = swap_bytes::ntoh<int16_t>(p->result_code);
 			payload_ = fetch_payload(p);

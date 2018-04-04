@@ -1,24 +1,26 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "NSClient++.h"
 
 #include <config.h>
 #include "core_api.h"
-#include <charEx.h>
 #include <string.h>
 #include <settings/settings_core.hpp>
 #include <nscapi/nscapi_helper.hpp>
@@ -28,26 +30,21 @@
 #include <nsclient/logger/logger.hpp>
 
 #ifdef HAVE_JSON_SPIRIT
-//#define JSON_SPIRIT_VALUE_ENABLED
 #include <json_spirit.h>
 #include <nscapi/nscapi_protobuf_functions.hpp>
 #include <plugin.pb-json.h>
 #endif
 
-#define LOG_ERROR_STD(msg) LOG_ERROR(((std::string)msg).c_str())
-#define LOG_CRITICAL_STD(msg) LOG_CRITICAL(((std::string)msg).c_str())
-#define LOG_MESSAGE_STD(msg) LOG_MESSAGE(((std::string)msg).c_str())
-#define LOG_DEBUG_STD(msg) LOG_DEBUG(((std::string)msg).c_str())
+#include "settings_query_handler.hpp"
+#include "registry_query_handler.hpp"
+#include "storage_query_handler.hpp"
 
-#define LOG_ERROR(msg) { nsclient::logging::logger::get_logger()->error("core", __FILE__, __LINE__, msg); }
-#define LOG_CRITICAL(msg) { nsclient::logging::logger::get_logger()->error("core", __FILE__, __LINE__, msg); }
-#define LOG_MESSAGE(msg) { nsclient::logging::logger::get_logger()->info("core", __FILE__, __LINE__, msg); }
-#define LOG_DEBUG(msg) { nsclient::logging::logger::get_logger()->debug("core", __FILE__, __LINE__, msg); }
+#define LOG_ERROR(core, msg) { core->get_logger()->error("core", __FILE__, __LINE__, msg); }
 
 extern NSClient *mainClient;	// Global core instance forward declaration.
 
 NSCAPI::errorReturn NSAPIExpandPath(const char* key, char* buffer, unsigned int bufLen) {
-	return nscapi::plugin_helper::wrapReturnString(buffer, bufLen, mainClient->expand_path(key), NSCAPI::api_return_codes::isSuccess);
+	return nscapi::plugin_helper::wrapReturnString(buffer, bufLen, mainClient->get_path()->expand_path(key), NSCAPI::api_return_codes::isSuccess);
 }
 
 NSCAPI::errorReturn NSAPIGetApplicationName(char *buffer, unsigned int bufLen) {
@@ -82,7 +79,7 @@ void NSAPIStopServer(void) {
 }
 NSCAPI::nagiosReturn NSAPIInject(const char *request_buffer, const unsigned int request_buffer_len, char **response_buffer, unsigned int *response_buffer_len) {
 	std::string request(request_buffer, request_buffer_len), response;
-	NSCAPI::nagiosReturn ret = mainClient->execute_query(request, response);
+	NSCAPI::nagiosReturn ret = mainClient->get_plugin_manager()->execute_query(request, response);
 	*response_buffer_len = static_cast<unsigned int>(response.size());
 	if (response.empty())
 		*response_buffer = NULL;
@@ -95,7 +92,7 @@ NSCAPI::nagiosReturn NSAPIInject(const char *request_buffer, const unsigned int 
 
 NSCAPI::nagiosReturn NSAPIExecCommand(const char* target, const char *request_buffer, const unsigned int request_buffer_len, char **response_buffer, unsigned int *response_buffer_len) {
 	std::string request(request_buffer, request_buffer_len), response;
-	NSCAPI::nagiosReturn ret = mainClient->exec_command(target, request, response);
+	NSCAPI::nagiosReturn ret = mainClient->get_plugin_manager()->exec_command(target, request, response);
 	*response_buffer_len = static_cast<unsigned int>(response.size());
 	if (response.empty())
 		*response_buffer = NULL;
@@ -126,17 +123,69 @@ NSCAPI::boolReturn NSAPICheckLogMessages(int loglevel) {
 }
 
 NSCAPI::errorReturn NSAPISettingsQuery(const char *request_buffer, const unsigned int request_buffer_len, char **response_buffer, unsigned int *response_buffer_len) {
-	return mainClient->settings_query(request_buffer, request_buffer_len, response_buffer, response_buffer_len);
+
+	try {
+		Plugin::SettingsRequestMessage request;
+		Plugin::SettingsResponseMessage response;
+		request.ParseFromArray(request_buffer, request_buffer_len);
+
+		nsclient::core::settings_query_handler sqr(mainClient, request);
+		sqr.parse(response);
+		*response_buffer_len = response.ByteSize();
+		*response_buffer = new char[*response_buffer_len + 10];
+		response.SerializeToArray(*response_buffer, *response_buffer_len);
+		return NSCAPI::api_return_codes::isSuccess;
+	} catch (const std::exception &e) {
+		LOG_ERROR(mainClient, "Settings query error: " + utf8::utf8_from_native(e.what()));
+	} catch (...) {
+		LOG_ERROR(mainClient, "Unknown settings query error");
+	}
+	return NSCAPI::api_return_codes::hasFailed;
 }
 NSCAPI::errorReturn NSAPIRegistryQuery(const char *request_buffer, const unsigned int request_buffer_len, char **response_buffer, unsigned int *response_buffer_len) {
-	return mainClient->registry_query(request_buffer, request_buffer_len, response_buffer, response_buffer_len);
+	try {
+		std::string response_string;
+		Plugin::RegistryRequestMessage request;
+		Plugin::RegistryResponseMessage response;
+		request.ParseFromArray(request_buffer, request_buffer_len);
+		nsclient::core::registry_query_handler rqh(mainClient->get_path(), mainClient->get_plugin_manager(), mainClient->get_logger(), request);
+		rqh.parse(response);
+
+		*response_buffer_len = response.ByteSize();
+		*response_buffer = new char[*response_buffer_len + 10];
+		response.SerializeToArray(*response_buffer, *response_buffer_len);
+	} catch (settings::settings_exception e) {
+		LOG_ERROR(mainClient, "Failed query: " + e.reason());
+		return NSCAPI::api_return_codes::hasFailed;
+	} catch (const std::exception &e) {
+		LOG_ERROR(mainClient, "Failed query: " + utf8::utf8_from_native(e.what()));
+		return NSCAPI::api_return_codes::hasFailed;
+	} catch (...) {
+		LOG_ERROR(mainClient, "Failed query");
+		return NSCAPI::api_return_codes::hasFailed;
+	}
+	return NSCAPI::api_return_codes::isSuccess;
 }
 
-wchar_t* copyString(const std::wstring &str) {
-	std::size_t sz = str.size();
-	wchar_t *tc = new wchar_t[sz + 2];
-	wcsncpy(tc, str.c_str(), sz);
-	return tc;
+NSCAPI::errorReturn NSCAPIStorageQuery(const char *request_buffer, const unsigned int request_buffer_len, char **response_buffer, unsigned int *response_buffer_len) {
+
+	try {
+		Plugin::StorageRequestMessage request;
+		Plugin::StorageResponseMessage response;
+		request.ParseFromArray(request_buffer, request_buffer_len);
+
+		nsclient::core::storage_query_handler sqr(mainClient->get_storage_manager(), mainClient->get_plugin_manager(), mainClient->get_logger(), request);
+		sqr.parse(response);
+		*response_buffer_len = response.ByteSize();
+		*response_buffer = new char[*response_buffer_len + 10];
+		response.SerializeToArray(*response_buffer, *response_buffer_len);
+		return NSCAPI::api_return_codes::isSuccess;
+	} catch (const std::exception &e) {
+		LOG_ERROR(mainClient, "Storage query error: " + utf8::utf8_from_native(e.what()));
+	} catch (...) {
+		LOG_ERROR(mainClient, "Unknown settings query error");
+	}
+	return NSCAPI::api_return_codes::hasFailed;
 }
 
 NSCAPI::errorReturn NSAPIReload(const char *module) {
@@ -178,13 +227,15 @@ nscapi::core_api::FUNPTR NSAPILoader(const char* buffer) {
 		return reinterpret_cast<nscapi::core_api::FUNPTR>(&NSCAPIProtobuf2Json);
 	if (strcmp(buffer, "NSCAPIEmitEvent") == 0)
 		return reinterpret_cast<nscapi::core_api::FUNPTR>(&NSCAPIEmitEvent);
+	if (strcmp(buffer, "NSAPIStorageQuery") == 0)
+		return reinterpret_cast<nscapi::core_api::FUNPTR>(&NSCAPIStorageQuery);
 	mainClient->get_logger()->critical("api", __FILE__, __LINE__, "Function not found: " + std::string(buffer));
 	return NULL;
 }
 
 NSCAPI::errorReturn NSAPINotify(const char* channel, const char* request_buffer, unsigned int request_buffer_len, char ** response_buffer, unsigned int *response_buffer_len) {
 	std::string request(request_buffer, request_buffer_len), response;
-	NSCAPI::nagiosReturn ret = mainClient->send_notification(channel, request, response);
+	NSCAPI::nagiosReturn ret = mainClient->get_plugin_manager()->send_notification(channel, request, response);
 	*response_buffer_len = static_cast<unsigned int>(response.size());
 	if (response.empty())
 		*response_buffer = NULL;
@@ -299,18 +350,18 @@ NSCAPI::errorReturn NSCAPIProtobuf2Json(const char* object, const char* request_
 	return NSCAPI::api_return_codes::isSuccess;
 }
 #else
-NSCAPI::errorReturn NSCAPIJson2protobuf(const char* request_buffer, unsigned int request_buffer_len, char ** response_buffer, unsigned int *response_buffer_len) {
-	mainClient->get_logger()->error("api", __FILE__, __LINE__, "Not compiled with jason spirit so json not supported");
-	return NSCAPI::hasFailed;
+NSCAPI::errorReturn NSCAPIJson2Protobuf(const char* request_buffer, unsigned int request_buffer_len, char ** response_buffer, unsigned int *response_buffer_len) {
+	mainClient->get_logger()->error("api", __FILE__, __LINE__, "Not compiled with json spirit so json not supported");
+	return NSCAPI::api_return_codes::hasFailed;
 }
 NSCAPI::errorReturn NSCAPIProtobuf2Json(const char* object, const char* request_buffer, unsigned int request_buffer_len, char ** response_buffer, unsigned int *response_buffer_len) {
-	mainClient->get_logger()->error("api", __FILE__, __LINE__, "Not compiled with jason spirit so json not supported");
-	return NSCAPI::hasFailed;
+	mainClient->get_logger()->error("api", __FILE__, __LINE__, "Not compiled with json spirit so json not supported");
+	return NSCAPI::api_return_codes::hasFailed;
 }
 #endif
 
 
 NSCAPI::errorReturn NSCAPIEmitEvent(const char* request_buffer, unsigned int request_buffer_len) {
 	std::string request(request_buffer, request_buffer_len);
-	return mainClient->emit_event(request);
+	return mainClient->get_plugin_manager()->emit_event(request);
 }

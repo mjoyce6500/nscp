@@ -1,25 +1,30 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "scheduler_handler.hpp"
-
-#include <nsclient/logger/logger.hpp>
+#include "NSClient++.h"
 #include "../libs/settings_manager/settings_manager_impl.h"
 
-#include "NSClient++.h"
+#include <nsclient/logger/logger.hpp>
+
+#include <str/format.hpp>
+
 
 extern NSClient *mainClient;
 
@@ -29,7 +34,7 @@ namespace task_scheduler {
 		return metadata[id];
 	}
 	void scheduler::handle_plugin(const schedule_metadata &data) {
-		NSClientT::plugin_type plugin = mainClient->find_plugin(data.plugin_id);
+		nsclient::core::plugin_manager::plugin_type plugin = mainClient->get_plugin_manager()->find_plugin(data.plugin_id);
 		plugin->handle_schedule("");
 	}
 	void scheduler::handle_reload(const schedule_metadata &data) {
@@ -57,11 +62,11 @@ namespace task_scheduler {
 	boost::posix_time::seconds parse_interval(const std::string &str) {
 		if (str.empty())
 			return boost::posix_time::seconds(0);
-		return boost::posix_time::seconds(strEx::stoui_as_time_sec(str, 1));
+		return boost::posix_time::seconds(str::format::stox_as_time_sec<long>(str, "s"));
 	}
 
 	void scheduler::add_task(schedule_metadata::task_source source, std::string interval, const std::string info) {
-		unsigned int id = tasks.add_task("internal", parse_interval(interval));
+		unsigned int id = tasks.add_task("internal", parse_interval(interval), 0.5);
 		schedule_metadata data;
 		data.source = source;
 		data.info = info;
@@ -94,4 +99,9 @@ namespace task_scheduler {
 	void scheduler::on_trace(const char* file, int line, std::string error) {
 		mainClient->get_logger()->trace("core::scheduler", file, line, error);
 	}
+
+	void scheduler::set_threads(int count) {
+		tasks.set_threads(count);
+	}
+
 }

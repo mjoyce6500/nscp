@@ -1,26 +1,29 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <string>
-#include <list>
-
 #include <NSCAPI.h>
 #include <nscapi/dll_defines.hpp>
+
+#include <string>
+#include <list>
 
 namespace nscapi {
 	class core_wrapper_impl;
@@ -44,20 +47,21 @@ namespace nscapi {
 		nscapi::core_api::lpNSCAPIJson2Protobuf fNSCAPIJson2Protobuf;
 		nscapi::core_api::lpNSCAPIProtobuf2Json fNSCAPIProtobuf2Json;
 		nscapi::core_api::lpNSCAPIEmitEvent fNSCAPIEmitEvent;
+		nscapi::core_api::lpNSAPIStorageQuery fNSAPIStorageQuery;
 
 	public:
 
 		core_wrapper();
 		~core_wrapper();
 
-		std::string expand_path(std::string value);
+		std::string expand_path(std::string value) const;
 
 		NSCAPI::errorReturn settings_query(const char *request, const unsigned int request_len, char **response, unsigned int *response_len) const;
 		bool settings_query(const std::string request, std::string &response) const;
 
 		// Helper functions for calling into the core
-		std::string getApplicationName(void);
-		std::string getApplicationVersionString(void);
+		std::string getApplicationName(void) const;
+		std::string getApplicationVersionString(void) const;
 
 		void log(NSCAPI::nagiosReturn msgType, std::string file, int line, std::string message) const;
 		void log(std::string message) const;
@@ -84,6 +88,9 @@ namespace nscapi {
 
 		NSCAPI::errorReturn registry_query(const char *request, const unsigned int request_len, char **response, unsigned int *response_len) const;
 		bool registry_query(const std::string request, std::string &response) const;
+
+		NSCAPI::errorReturn storage_query(const char *request, const unsigned int request_len, char **response, unsigned int *response_len) const;
+		bool storage_query(const std::string request, std::string &response) const;
 
 		bool load_endpoints(nscapi::core_api::lpNSAPILoader f);
 		void set_alias(const std::string default_alias, const std::string alias);

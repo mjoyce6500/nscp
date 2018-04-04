@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <client/simple_client.hpp>
@@ -22,9 +25,14 @@
 #include <nscapi/nscapi_helper.hpp>
 #include <nscapi/nscapi_core_helper.hpp>
 
+#include <utf8.hpp>
+#include <str/utils.hpp>
+
+#include <boost/foreach.hpp>
+#include <boost/function.hpp>
+
 static void create_registry_query(const nscapi::core_wrapper *core, const std::string command, const Plugin::Registry_ItemType &type, Plugin::RegistryResponseMessage &response_message) {
 	Plugin::RegistryRequestMessage rrm;
-	nscapi::protobuf::functions::create_simple_header(rrm.mutable_header());
 	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
 	if (!command.empty()) {
 		payload->mutable_inventory()->set_name(command);
@@ -62,15 +70,14 @@ std::string render_query(const ::Plugin::RegistryResponseMessage::Response::Inve
 
 static std::string render_list(const Plugin::RegistryResponseMessage &response_message, boost::function<std::string(const ::Plugin::RegistryResponseMessage::Response::Inventory&)> renderer) {
 	std::string list;
-	for (int i = 0; i < response_message.payload_size(); i++) {
-		const ::Plugin::RegistryResponseMessage::Response &pl = response_message.payload(i);
-		for (int j = 0; j < pl.inventory_size(); j++) {
+	BOOST_FOREACH(const ::Plugin::RegistryResponseMessage::Response &pl, response_message.payload()) {
+		BOOST_FOREACH(const ::Plugin::RegistryResponseMessage_Response_Inventory& i, pl.inventory()) {
 			if (!list.empty())
 				list += "\n";
-			list += renderer(pl.inventory(j)); // .name() + "\t-" + pl.inventory(j).info().description();
+			list += renderer(i);
 		}
 		if (pl.result().code() != ::Plugin::Common_Result_StatusCodeType_STATUS_OK) {
-			return "Error: " + response_message.payload(i).result().message();
+			return "Error: " + pl.result().message();
 		}
 	}
 	return list;
@@ -175,7 +182,6 @@ namespace client {
 				handler->output_message(name + " disabled successfully...");
 		} else if (command.size() > 4 && command.substr(0, 4) == "load") {
 			Plugin::RegistryRequestMessage rrm;
-			nscapi::protobuf::functions::create_simple_header(rrm.mutable_header());
 			Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
 			std::string name = command.substr(5);
 			payload->mutable_control()->set_type(Plugin::Registry_ItemType_MODULE);
@@ -196,7 +202,6 @@ namespace client {
 				handler->output_message(name + " loaded successfully...");
 		} else if (command.size() > 6 && command.substr(0, 6) == "unload") {
 			Plugin::RegistryRequestMessage rrm;
-			nscapi::protobuf::functions::create_simple_header(rrm.mutable_header());
 			Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
 			std::string name = command.substr(7);
 			payload->mutable_control()->set_type(Plugin::Registry_ItemType_MODULE);
@@ -244,7 +249,7 @@ namespace client {
 		} else if (command.size() > 4 && command.substr(0, 4) == "exec") {
 			try {
 				std::list<std::string> args;
-				strEx::s::parse_command(command, args);
+				str::utils::parse_command(command, args);
 				if (args.size() < 3) {
 					handler->output_message("Usage: exec <target> <command> [args]");
 					return;
@@ -265,14 +270,31 @@ namespace client {
 		} else if (!command.empty()) {
 			try {
 				std::list<std::string> args;
-				strEx::s::parse_command(command, args);
+				str::utils::parse_command(command, args);
 				std::string cmd = args.front(); args.pop_front();
 				std::string msg, perf;
 				nscapi::core_helper helper(handler->get_core(), handler->get_plugin_id());
-				NSCAPI::nagiosReturn ret = helper.simple_query(cmd, args, msg, perf);
-				handler->output_message(nscapi::plugin_helper::translateReturn(ret) + ": " + msg);
-				if (!perf.empty())
-					handler->output_message(" Performance data: " + perf);
+				std::string response;
+				NSCAPI::nagiosReturn ret = helper.simple_query(cmd, args, response);
+				if (!response.empty()) {
+					try {
+						Plugin::QueryResponseMessage message;
+						message.ParseFromString(response);
+
+						BOOST_FOREACH(const Plugin::QueryResponseMessage::Response payload, message.payload()) {
+							BOOST_FOREACH(const Plugin::QueryResponseMessage::Response::Line &l, payload.lines()) {
+								std::string msg = nscapi::plugin_helper::translateReturn(payload.result()) + ": " + l.message();
+								handler->output_message(msg);
+								std::string perf = nscapi::protobuf::functions::build_performance_data(l, nscapi::protobuf::functions::no_truncation);
+								handler->output_message(" Performance data: " + perf);
+							}
+							//return gbp_to_nagios_status(payload.result());
+						}
+					} catch (std::exception &e) {
+						std::string msg = "Failed to extract return message: " + utf8::utf8_from_native(e.what());
+						handler->output_message(msg);
+					}
+				}
 			} catch (const std::exception &e) {
 				handler->output_message("Exception: " + utf8::utf8_from_native(e.what()));
 			} catch (...) {

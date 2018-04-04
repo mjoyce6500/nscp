@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <map>
@@ -24,7 +27,7 @@
 #include <parsers/where/helpers.hpp>
 
 #include <simple_timer.hpp>
-#include <strEx.h>
+#include <str/utils.hpp>
 #include "filter.hpp"
 
 using namespace parsers::where;
@@ -70,7 +73,7 @@ namespace check_page_filter {
 		if (unit == "%") {
 			number = (static_cast<double>(object->get_total())*number) / 100.0;
 		} else {
-			number = format::decode_byte_units(number, unit);
+			number = str::format::decode_byte_units(number, unit);
 		}
 		return parsers::where::factory::create_int(number);
 	}
@@ -218,8 +221,8 @@ namespace check_svc_filter {
 namespace check_uptime_filter {
 	parsers::where::node_type parse_time(boost::shared_ptr<filter_obj> object, parsers::where::evaluation_context context, parsers::where::node_type subject) {
 		parsers::where::helpers::read_arg_type value = parsers::where::helpers::read_arguments(context, subject, "d");
-		std::string expr = strEx::s::xtos(value.get<0>()) + value.get<2>();
-		return parsers::where::factory::create_int(strEx::stoui_as_time_sec(expr));
+		std::string expr = str::xtos(value.get<0>()) + value.get<2>();
+		return parsers::where::factory::create_int(str::format::stox_as_time_sec<long long>(expr, "s"));
 	}
 
 	static const parsers::where::value_type type_custom_uptime = parsers::where::type_custom_int_1;
@@ -246,5 +249,8 @@ namespace os_version_filter {
 			("minor", boost::bind(&filter_obj::get_minor, _1), "Minor version number").add_perf("")
 			("build", boost::bind(&filter_obj::get_build, _1), "Build version number").add_perf("")
 			;
+ 		registry_.add_string()
+ 			("suite", boost::bind(&filter_obj::get_suite_string, _1), "Which suites are installed on the machine (Microsoft BackOffice, Web Edition, Compute Cluster Edition, Datacenter Edition, Enterprise Edition, Embedded, Home Edition, Remote Desktop Support, Small Business Server, Storage Server, Terminal Services, Home Server)")
+ 			;
 	}
 }

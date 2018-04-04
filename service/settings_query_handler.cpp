@@ -4,8 +4,9 @@
 
 #include <nscapi/nscapi_protobuf_functions.hpp>
 
+#ifdef HAVE_JSON_SPIRIT
 #include <json_spirit.h>
-
+#endif
 #include <boost/foreach.hpp>
 #include <boost/unordered_set.hpp>
 
@@ -31,33 +32,20 @@ namespace nsclient {
 
 		void settings_query_handler::parse(Plugin::SettingsResponseMessage &response) {
 			std::string response_string;
-			nscapi::protobuf::functions::create_simple_header(response.mutable_header());
 
 			BOOST_FOREACH(const Plugin::SettingsRequestMessage::Request &r, request_.payload()) {
 				Plugin::SettingsResponseMessage::Response* rp = response.add_payload();
 				try {
 					if (r.has_inventory()) {
-						return parse_inventory(r.inventory(), rp);
+						parse_inventory(r.inventory(), rp);
 					} else if (r.has_query()) {
-						return parse_query(r.query(), rp);
+						parse_query(r.query(), rp);
 					} else if (r.has_registration()) {
-						return parse_registration(r.registration(), r.plugin_id(), rp);
+						parse_registration(r.registration(), r.plugin_id(), rp);
 					} else if (r.has_update()) {
-						const Plugin::SettingsRequestMessage::Request::Update &p = r.update();
-						rp->mutable_update();
-						if (p.value().has_string_data()) {
-							settings_manager::get_settings()->set_string(p.node().path(), p.node().key(), p.value().string_data());
-						} else if (p.value().has_bool_data()) {
-							settings_manager::get_settings()->set_bool(p.node().path(), p.node().key(), p.value().bool_data());
-						} else if (p.value().has_int_data()) {
-							settings_manager::get_settings()->set_int(p.node().path(), p.node().key(), p.value().int_data());
-						} else {
-							LOG_ERROR_CORE("Invalid data type");
-						}
-						rp->mutable_result()->set_code(Plugin::Common_Result_StatusCodeType_STATUS_OK);
+						parse_update(r.update(), rp);
 					} else if (r.has_control()) {
 						parse_control(r.control(), rp);
-						
 					} else if (r.has_status()) {
 						rp->mutable_status()->set_has_changed(settings_manager::get_core()->is_dirty());
 						rp->mutable_status()->set_context(settings_manager::get_settings()->get_context());
@@ -125,7 +113,12 @@ namespace nsclient {
 								rpp->mutable_info()->set_description(desc.description);
 								rpp->mutable_info()->set_advanced(desc.advanced);
 								rpp->mutable_info()->set_sample(desc.is_sample);
-								rpp->mutable_info()->mutable_default_value()->set_string_data(desc.defValue);
+								if (desc.defValue.string_value)
+									rpp->mutable_info()->mutable_default_value()->set_string_data(*desc.defValue.string_value);
+								if (desc.defValue.int_value)
+									rpp->mutable_info()->mutable_default_value()->set_int_data(*desc.defValue.int_value);
+								if (desc.defValue.bool_value)
+									rpp->mutable_info()->mutable_default_value()->set_bool_data(*desc.defValue.bool_value);
 								if (desc.type == NSCAPI::key_string) {
 									settings::settings_interface::op_string val = settings_manager::get_settings()->get_string(path, key);
 									if (val)
@@ -172,6 +165,7 @@ namespace nsclient {
 							rpp->mutable_info()->set_description(desc.description);
 							rpp->mutable_info()->set_advanced(desc.advanced);
 							rpp->mutable_info()->set_sample(desc.is_sample);
+							rpp->mutable_info()->set_subkey(desc.subkey.is_subkey);
 							settings_add_plugin_data(desc.plugins, rpp->mutable_info());
 						}
 					}
@@ -196,7 +190,12 @@ namespace nsclient {
 							rpp->mutable_info()->set_description(desc.description);
 							rpp->mutable_info()->set_advanced(desc.advanced);
 							rpp->mutable_info()->set_sample(desc.is_sample);
-							rpp->mutable_info()->mutable_default_value()->set_string_data(desc.defValue);
+							if (desc.defValue.string_value)
+								rpp->mutable_info()->mutable_default_value()->set_string_data(*desc.defValue.string_value);
+							if (desc.defValue.int_value)
+								rpp->mutable_info()->mutable_default_value()->set_int_data(*desc.defValue.int_value);
+							if (desc.defValue.bool_value)
+								rpp->mutable_info()->mutable_default_value()->set_bool_data(*desc.defValue.bool_value);
 							try {
 								if (desc.type == NSCAPI::key_string)
 									rpp->mutable_value()->set_string_data(settings_manager::get_settings()->get_string(path, key, ""));
@@ -262,14 +261,18 @@ namespace nsclient {
 			Plugin::SettingsResponseMessage::Response::Query *rpp = rp->mutable_query();
 			rpp->mutable_node()->CopyFrom(q.node());
 			if (q.node().has_key()) {
-				if (q.type() == Plugin::Common_DataType_STRING)
-					rpp->mutable_value()->set_string_data(settings_manager::get_settings()->get_string(q.node().path(), q.node().key(), q.default_value().string_data()));
-				else if (q.type() == Plugin::Common_DataType_INT)
-					rpp->mutable_value()->set_int_data(settings_manager::get_settings()->get_int(q.node().path(), q.node().key(), q.default_value().int_data()));
-				else if (q.type() == Plugin::Common_DataType_BOOL)
-					rpp->mutable_value()->set_bool_data(settings_manager::get_settings()->get_bool(q.node().path(), q.node().key(), q.default_value().bool_data()));
-				else {
-					LOG_ERROR_CORE("Invalid type");
+				if (q.has_type() && q.type() == Plugin::Common_DataType_STRING) {
+					std::string def = q.has_default_value() && q.default_value().has_string_data() ? q.default_value().string_data() : "";
+					rpp->mutable_value()->set_string_data(settings_manager::get_settings()->get_string(q.node().path(), q.node().key(), def));
+				} else if (q.has_type() && q.type() == Plugin::Common_DataType_INT) {
+					long long def = q.has_default_value() && q.default_value().has_int_data() ? q.default_value().int_data() : 0;
+					rpp->mutable_value()->set_int_data(settings_manager::get_settings()->get_int(q.node().path(), q.node().key(), def));
+				} else if (q.has_type() && q.type() == Plugin::Common_DataType_BOOL) {
+					bool def = q.has_default_value() && q.default_value().has_bool_data() ? q.default_value().bool_data() : false;
+					rpp->mutable_value()->set_bool_data(settings_manager::get_settings()->get_bool(q.node().path(), q.node().key(), def));
+				} else {
+					std::string def = q.has_default_value() && q.default_value().has_string_data() ? q.default_value().string_data() : "";
+					rpp->mutable_value()->set_string_data(settings_manager::get_settings()->get_string(q.node().path(), q.node().key(), def));
 				}
 			} else {
 				::Plugin::Common::AnyDataType *value = rpp->mutable_value();
@@ -290,6 +293,7 @@ namespace nsclient {
 		void settings_query_handler::parse_registration(const Plugin::SettingsRequestMessage::Request::Registration &q, int plugin_id, Plugin::SettingsResponseMessage::Response* rp) {
 			rp->mutable_registration();
 			if (q.has_fields()) {
+#ifdef HAVE_JSON_SPIRIT
 				json_spirit::Object node;
 
 				try {
@@ -301,7 +305,7 @@ namespace nsclient {
 				} catch (const std::exception &e) {
 					LOG_ERROR_CORE(std::string("Failed to process fields for ") + e.what());
 				} catch (const json_spirit::ParseError &e) {
-					LOG_ERROR_CORE(std::string("Failed to process fields for ") + e.reason_ + " @ " + strEx::s::xtos(e.line_) + ":" + strEx::s::xtos(e.column_));
+					LOG_ERROR_CORE(std::string("Failed to process fields for ") + e.reason_ + " @ " + str::xtos(e.line_) + ":" + str::xtos(e.column_));
 				} catch (...) {
 					LOG_ERROR_CORE("Failed to process fields for ");
 				}
@@ -315,24 +319,43 @@ namespace nsclient {
 				//node.insert(json_spirit::Object::value_type("fields", value));
 				std::string tplData = json_spirit::write(node);
 				settings_manager::get_core()->register_tpl(plugin_id, q.node().path(), q.info().title(), tplData);
+#else
+				LOG_ERROR_CORE("Not compiled with json support");
+#endif
 			} else if (q.node().has_key()) {
-				settings_manager::get_core()->register_key(plugin_id, q.node().path(), q.node().key(), settings::settings_core::key_string, q.info().title(), q.info().description(), q.info().default_value().string_data(), q.info().advanced(), q.info().sample());
+				nscapi::settings::settings_value defValue;
+				if (q.info().default_value().has_string_data())
+					defValue = nscapi::settings::settings_value::make_string(q.info().default_value().string_data());
+				else if (q.info().default_value().has_int_data())
+					defValue = nscapi::settings::settings_value::make_int(q.info().default_value().int_data());
+				else if (q.info().default_value().has_bool_data())
+					defValue = nscapi::settings::settings_value::make_bool(q.info().default_value().bool_data());
+				settings_manager::get_core()->register_key(plugin_id, q.node().path(), q.node().key(), settings::settings_core::key_string, q.info().title(), q.info().description(), defValue, q.info().advanced(), q.info().sample());
 			} else {
-				settings_manager::get_core()->register_path(plugin_id, q.node().path(), q.info().title(), q.info().description(), q.info().advanced(), q.info().sample());
+				if (q.info().subkey()) {
+					settings_manager::get_core()->register_subkey(plugin_id, q.node().path(), q.info().title(), q.info().description(), q.info().advanced(), q.info().sample());
+				} else {
+					settings_manager::get_core()->register_path(plugin_id, q.node().path(), q.info().title(), q.info().description(), q.info().advanced(), q.info().sample());
+				}
 			}
 			rp->mutable_result()->set_code(Plugin::Common_Result_StatusCodeType_STATUS_OK);
 		}
 
+
 		void settings_query_handler::parse_update(const Plugin::SettingsRequestMessage::Request::Update &p, Plugin::SettingsResponseMessage::Response* rp) {
-		rp->mutable_update();
-			if (p.value().has_string_data()) {
+			rp->mutable_update();
+			if (p.has_value() && p.value().has_string_data()) {
 				settings_manager::get_settings()->set_string(p.node().path(), p.node().key(), p.value().string_data());
-			} else if (p.value().has_bool_data()) {
+			} else if (p.has_value() && p.value().has_bool_data()) {
 				settings_manager::get_settings()->set_bool(p.node().path(), p.node().key(), p.value().bool_data());
-			} else if (p.value().has_int_data()) {
+			} else if (p.has_value() && p.value().has_int_data()) {
 				settings_manager::get_settings()->set_int(p.node().path(), p.node().key(), p.value().int_data());
 			} else {
-				LOG_ERROR_CORE("Invalid data type");
+				if (p.node().has_key()) {
+					settings_manager::get_settings()->remove_key(p.node().path(), p.node().key());
+				} else {
+					settings_manager::get_settings()->remove_path(p.node().path());
+				}
 			}
 			rp->mutable_result()->set_code(Plugin::Common_Result_StatusCodeType_STATUS_OK);
 		}

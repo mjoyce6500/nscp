@@ -1,38 +1,39 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <map>
-#include <error.hpp>
-#include <nscapi/nscapi_plugin_impl.hpp>
-#include <process/execute_process.hpp>
+#include "script_interface.hpp"
+
 #include "commands.hpp"
 #include "alias.hpp"
 
+#include <nscapi/nscapi_plugin_impl.hpp>
+
+#include <string>
+
 class CheckExternalScripts : public nscapi::impl::simple_plugin {
 private:
-	commands::command_handler commands_;
+	boost::shared_ptr<script_provider_interface> provider_;
 	alias::command_handler aliases_;
 	unsigned int timeout;
-	//std::string commands_path;
-	//std::string aliases_path;
-	std::string scriptDirectory_;
 	std::string root_;
 	bool allowArgs_;
 	bool allowNasty_;
-	std::map<std::string, std::string> wrappings_;
 
 public:
 	CheckExternalScripts();
@@ -40,20 +41,15 @@ public:
 	// Module calls
 	bool loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode);
 	bool unloadModule();
-	void query_fallback(const Plugin::QueryRequestMessage::Request &request, Plugin::QueryResponseMessage::Response *response, const Plugin::QueryRequestMessage &request_message);
-	bool commandLineExec(const int target_mode, const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response, const Plugin::ExecuteRequestMessage &request_message);
+	void query_fallback(const Plugin::QueryRequestMessage_Request &request, Plugin::QueryResponseMessage_Response *response, const Plugin::QueryRequestMessage &request_message);
+	bool commandLineExec(const int target_mode, const Plugin::ExecuteRequestMessage_Request &request, Plugin::ExecuteResponseMessage_Response *response, const Plugin::ExecuteRequestMessage &request_message);
 
 private:
 
-	void add_script(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
-
-	void handle_command(const commands::command_object &cd, const std::list<std::string> &args, Plugin::QueryResponseMessage::Response *response);
-	void handle_alias(const alias::command_object &cd, const std::list<std::string> &args, Plugin::QueryResponseMessage::Response *response);
+	void handle_command(const commands::command_object &cd, const std::list<std::string> &args, Plugin::QueryResponseMessage_Response *response);
+	void handle_alias(const alias::command_object &cd, const std::list<std::string> &args, Plugin::QueryResponseMessage_Response *response);
 	void addAllScriptsFrom(std::string path);
 	void add_command(std::string key, std::string arg);
 	void add_alias(std::string key, std::string command);
 	void add_wrapping(std::string key, std::string command);
-	std::string generate_wrapped_command(std::string command);
-	void configure(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
-	void list(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
 };

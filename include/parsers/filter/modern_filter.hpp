@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -26,7 +29,8 @@
 #include <parsers/where/engine_impl.hpp>
 
 #include <NSCAPI.h>
-#include <strEx.h>
+#include <str/utils.hpp>
+#include <str/xtos.hpp>
 #include <nscapi/nscapi_helper.hpp>
 
 namespace parsers {
@@ -43,6 +47,7 @@ struct perf_writer_interface {
 namespace modern_filter {
 	template<class Tfactory>
 	struct filter_text_renderer {
+		typedef boost::shared_ptr<parsers::where::error_handler_interface> error_handler;
 		struct my_entry {
 			parsers::simple_expression::entry origin;
 			parsers::where::node_type node;
@@ -62,13 +67,16 @@ namespace modern_filter {
 		bool empty() const {
 			return entries.empty();
 		}
-		bool parse(boost::shared_ptr<Tfactory> context, const std::string str, std::string &error) {
-			if (str.empty())
+		bool parse(boost::shared_ptr<Tfactory> context, const std::string str, error_handler error) {
+			if (str.empty() || str == "none")
 				return true;
 			parsers::simple_expression::result_type keys;
 			parsers::simple_expression expr;
+			if (error->is_debug()) {
+				error->log_debug("Parsing: " + str);
+			}
 			if (!expr.parse(str, keys)) {
-				error = "Failed to parse: " + str;
+				error->log_error("Failed to parse: " + str);
 				return false;
 			}
 			BOOST_FOREACH(const parsers::simple_expression::entry &e, keys) {
@@ -80,7 +88,7 @@ namespace modern_filter {
 					} else if (context->has_function(tag)) {
 						my_e.node = context->create_text_function(tag);
 					} else {
-						error = "Invalid variable: " + e.name;
+						error->log_error("Invalid variable: " + e.name);
 						return false;
 					}
 				}
@@ -94,9 +102,9 @@ namespace modern_filter {
 				if (!e.origin.is_variable)
 					ret += e.origin.name;
 				else if (e.node->is_int())
-					ret += strEx::s::xtos_non_sci(e.node->get_int_value(context));
+					ret += str::xtos_non_sci(e.node->get_int_value(context));
 				else if (e.node->is_float())
-					ret += strEx::s::xtos(e.node->get_float_value(context));
+					ret += str::xtos(e.node->get_float_value(context));
 				else
 					ret += e.node->get_string_value(context);
 			}
@@ -136,9 +144,9 @@ namespace modern_filter {
 			std::map<std::string, std::string> ret;
 			BOOST_FOREACH(const my_entry &e, entries) {
 				if (e.node->is_int())
-					ret[e.key] = strEx::s::xtos_non_sci(e.node->get_int_value(context));
+					ret[e.key] = str::xtos_non_sci(e.node->get_int_value(context));
 				else if (e.node->is_float())
-					ret[e.key] = strEx::s::xtos(e.node->get_float_value(context));
+					ret[e.key] = str::xtos(e.node->get_float_value(context));
 				else
 					ret[e.key] = e.node->get_string_value(context);
 			}
@@ -162,15 +170,16 @@ namespace modern_filter {
 		};
 
 		typedef std::list<config_entry> entry_list;
+		typedef boost::shared_ptr<parsers::where::error_handler_interface> error_handler;
 		entry_list entries;
 		std::list<std::string> extra_perf;
 		perf_config_parser() {}
 
-		bool parse(boost::shared_ptr<Tfactory> context, const std::string str, std::string &error) {
+		bool parse(boost::shared_ptr<Tfactory> context, const std::string str, error_handler error) {
 			parsers::perfconfig::result_type keys;
 			parsers::perfconfig parser;
 			if (!parser.parse(str, keys)) {
-				error = "Failed to parse: " + str;
+				error->log_error("Failed to parse: " + str);
 				return false;
 			}
 			BOOST_FOREACH(const parsers::perfconfig::perf_rule &r, keys) {
@@ -236,7 +245,7 @@ namespace modern_filter {
 		}
 	};
 
-	class error_handler_impl : public parsers::where::error_handler_interface{
+	class error_handler_impl : public parsers::where::error_handler_interface {
 		std::string error;
 		bool debug_;
 		error_handler_impl() {}
@@ -279,7 +288,7 @@ namespace modern_filter {
 		boost::shared_ptr<Tfactory> context;
 		bool fetch_hash_;
 		bool has_unique_index;
-		error_type error_handler;
+		error_type error_handler_;
 
 		struct perf_entry {
 			std::string label;
@@ -299,42 +308,42 @@ namespace modern_filter {
 			context->set_summary(&summary);
 		}
 
-		boost::tuple<std::string, std::string> get_filter_syntax() const {
-			return boost::make_tuple(summary.get_filter_syntax(), context->get_filter_syntax());
+		std::map<std::string, std::string> get_filter_syntax() const {
+			std::map<std::string, std::string> ret;
+			std::map<std::string, std::string> m1 = summary.get_filter_syntax();
+			std::map<std::string, std::string> m2 = context->get_filter_syntax();
+			ret.insert(m1.begin(), m1.end());
+			ret.insert(m2.begin(), m2.end());
+			return ret;
 		}
 		bool build_index(const std::string &unqie, std::string &gerror) {
 			std::string lerror;
-			if (!renderer_unqiue.parse(context, unqie, lerror)) {
+			if (!renderer_unqiue.parse(context, unqie, error_handler_)) {
 				gerror = "Invalid unique-syntax: " + lerror;
 				return false;
 			}
 			has_unique_index = true;
 			return true;
 		}
-		bool build_syntax(const std::string &top, const std::string &detail, const std::string &perf, const std::string &perf_config_data, const std::string &ok_syntax, const std::string &empty_syntax, std::string &gerror) {
-			std::string lerror;
-			if (!renderer_top.parse(context, top, lerror)) {
-				gerror = "Invalid top-syntax: " + lerror;
+		bool build_syntax(const bool debug, const std::string &top, const std::string &detail, const std::string &perf, const std::string &perf_config_data, const std::string &ok_syntax, const std::string &empty_syntax, std::string &gerror) {
+			if (debug)
+				set_debug(true);
+			if (!renderer_top.parse(context, top, get_error_handler(debug))) {
 				return false;
 			}
-			if (!renderer_detail.parse(context, detail, lerror)) {
-				gerror = "Invalid syntax: " + lerror;
+			if (!renderer_detail.parse(context, detail, get_error_handler(debug))) {
 				return false;
 			}
-			if (!renderer_perf.parse(context, perf, lerror)) {
-				gerror = "Invalid syntax: " + lerror;
+			if (!renderer_perf.parse(context, perf, get_error_handler(debug))) {
 				return false;
 			}
-			if (!perf_config.parse(context, perf_config_data, lerror)) {
-				gerror = "Invalid syntax: " + lerror;
+			if (!perf_config.parse(context, perf_config_data, get_error_handler(debug))) {
 				return false;
 			}
-			if (!renderer_ok.parse(context, ok_syntax, lerror)) {
-				gerror = "Invalid syntax: " + lerror;
+			if (!renderer_ok.parse(context, ok_syntax, get_error_handler(debug))) {
 				return false;
 			}
-			if (!renderer_empty.parse(context, empty_syntax, lerror)) {
-				gerror = "Invalid syntax: " + lerror;
+			if (!renderer_empty.parse(context, empty_syntax, get_error_handler(debug))) {
 				return false;
 			}
 			renderer_hash.parse(context);
@@ -355,18 +364,22 @@ namespace modern_filter {
 				crit_.push_back(crit);
 			return build_engines(debug, filter_, ok_, warn_, crit_);
 		}
-		bool build_engines(const bool debug, const std::vector<std::string> &filter, const std::vector<std::string> &ok, const std::vector<std::string> &warn, const std::vector<std::string> &crit) {
-			if (!error_handler)
-				error_handler.reset(new error_handler_impl(debug));
-			else
-				error_handler->set_debug(debug);
+
+		error_type get_error_handler(bool debug) {
+			if (!error_handler_) {
+				error_handler_.reset(new error_handler_impl(debug));
+			}
 			if (debug)
 				set_debug(true);
+			return error_handler_;
+		}
 
-			if (!filter.empty()) engine_filter.reset(new parsers::where::engine(filter, error_handler));
-			if (!ok.empty()) engine_ok.reset(new parsers::where::engine(ok, error_handler));
-			if (!warn.empty()) engine_warn.reset(new parsers::where::engine(warn, error_handler));
-			if (!crit.empty()) engine_crit.reset(new parsers::where::engine(crit, error_handler));
+		bool build_engines(const bool debug, const std::vector<std::string> &filter, const std::vector<std::string> &ok, const std::vector<std::string> &warn, const std::vector<std::string> &crit) {
+
+			if (!filter.empty()) engine_filter.reset(new parsers::where::engine(filter, get_error_handler(debug)));
+			if (!ok.empty()) engine_ok.reset(new parsers::where::engine(ok, get_error_handler(debug)));
+			if (!warn.empty()) engine_warn.reset(new parsers::where::engine(warn, get_error_handler(debug)));
+			if (!crit.empty()) engine_crit.reset(new parsers::where::engine(crit, get_error_handler(debug)));
 
 			if (engine_warn) engine_warn->enabled_performance_collection();
 			if (engine_crit) engine_crit->enabled_performance_collection();
@@ -409,19 +422,27 @@ namespace modern_filter {
 			context->enable_debug(debug);
 		}
 		bool has_errors() const {
-			if (error_handler)
-				return error_handler->has_errors();
+			if (error_handler_)
+				return error_handler_->has_errors();
 			return false;
 		}
 		std::string get_errors() const {
-			if (error_handler)
-				return error_handler->get_errors();
+			if (error_handler_)
+				return error_handler_->get_errors();
 			return "unknown";
+		}
+		bool should_log_debug() {
+			return error_handler_ && error_handler_->is_debug();
+		}
+		void log_debug(const std::string &str) {
+			if (error_handler_) {
+				error_handler_->log_debug(str);
+			}
 		}
 
 		void register_leaf_performance_data(const parsers::where::performance_node &node, const bool is_crit) {
 			if (!context->has_variable(node.variable)) {
-				error_handler->log_error("Failed to register for performance data");
+				error_handler_->log_error("Failed to register for performance data");
 				return;
 			}
 			typename leaf_performance_entry_type::iterator it = leaf_performance_data.find(node.variable);
@@ -443,7 +464,7 @@ namespace modern_filter {
 		}
 		void add_manual_perf(std::string key) {
 			if (!context->has_variable(key)) {
-				error_handler->log_error("Failed to register for performance data");
+				error_handler_->log_error("Failed to register for performance data");
 				return;
 			}
 			perf_entry entry;
@@ -496,8 +517,7 @@ namespace modern_filter {
 				else
 					summary.matched(current);
 				if (engine_crit && engine_crit->match(context, true)) {
-					if (error_handler && error_handler->is_debug())
-						error_handler->log_debug("Crit match: " + current);
+					if (should_log_debug()) log_debug("Crit match: " + current);
 					if (second_unique_match)
 						summary.matched_crit_unique();
 					else
@@ -505,8 +525,7 @@ namespace modern_filter {
 					nscapi::plugin_helper::escalteReturnCodeToCRIT(summary.returnCode);
 					matched_bound = true;
 				} else if (engine_warn && engine_warn->match(context, true)) {
-					if (error_handler && error_handler->is_debug())
-						error_handler->log_debug("Warn match: " + current);
+					if (should_log_debug()) log_debug("Warn match: " + current);
 					if (second_unique_match)
 						summary.matched_warn_unique();
 					else
@@ -514,8 +533,7 @@ namespace modern_filter {
 					nscapi::plugin_helper::escalteReturnCodeToWARN(summary.returnCode);
 					matched_bound = true;
 				} else if (engine_ok && engine_ok->match(context, true)) {
-					if (error_handler && error_handler->is_debug())
-						error_handler->log_debug("Ok match: " + current);
+					if (should_log_debug()) log_debug("Ok match: " + current);
 					// TODO: Unsure of this, should this not re-set matched?
 					// What is matched for?
 					if (second_unique_match)
@@ -524,8 +542,7 @@ namespace modern_filter {
 						summary.matched_ok(current);
 					matched_bound = true;
 				} else {
-					if (error_handler && error_handler->is_debug())
-						error_handler->log_debug("Crit/warn/ok did not match: " + current);
+					if (should_log_debug()) log_debug("Crit/warn/ok did not match: " + current);
 					if (second_unique_match)
 						summary.matched_ok_unique();
 					else
@@ -534,8 +551,8 @@ namespace modern_filter {
 				if (matched_bound) {
 					has_matched = true;
 				}
-			} else if (error_handler && error_handler->is_debug()) {
-				error_handler->log_debug("Filter did not match: " + renderer_detail.render(context));
+			} else if (should_log_debug()) {
+				log_debug("Filter did not match: " + renderer_detail.render(context));
 			}
 			return match_result(matched_filter, matched_bound);
 		}
@@ -560,10 +577,10 @@ namespace modern_filter {
 				// TODO: Unsure of this, should this not re-set matched?
 				// What is matched for?
 				matched = true;
-			} else if (error_handler && error_handler->is_debug()) {
-				error_handler->log_debug("Crit/warn/ok did not match: <END>");
+			} else if (should_log_debug()) {
+				log_debug("Crit/warn/ok did not match: <END>");
 				if (context->has_debug()) {
-					error_handler->log_debug(context->get_debug());
+					log_debug(context->get_debug());
 					context->clear();
 				}
 			}

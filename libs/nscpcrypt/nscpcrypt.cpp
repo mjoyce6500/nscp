@@ -6,10 +6,15 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
-#include <unicode_char.hpp>
 #include <nscpcrypt/nscpcrypt.hpp>
 
 #ifdef HAVE_LIBCRYPTOPP
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+#pragma GCC diagnostic ignored "-pedantic"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#endif
 #include <cryptlib.h>
 #include <modes.h>
 #include <des.h>
@@ -25,6 +30,9 @@
 #include <gost.h>
 #include <filters.h>
 #include <osrng.h>
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 #endif
 
 #define TRANSMITTED_IV_SIZE     128     /* size of IV to transmit - must be as big as largest IV needed for any crypto algorithm */

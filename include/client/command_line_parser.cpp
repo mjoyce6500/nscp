@@ -1,28 +1,126 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <boost/bind.hpp>
-
-#include <utf8.hpp>
 
 #include <client/command_line_parser.hpp>
 
-#include <nscapi/functions.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+#include <nscapi/nscapi_protobuf.hpp>
+
+#include <utf8.hpp>
+
+#include <boost/bind.hpp>
+#include <boost/iterator.hpp>
+#include <boost/algorithm/string.hpp>
 
 namespace po = boost::program_options;
+
+
+struct payload_builder {
+	enum types {
+		type_submit,
+		type_query,
+		type_exec,
+		type_none
+	};
+
+	::Plugin::SubmitRequestMessage submit_message;
+	::Plugin::QueryResponseMessage::Response *submit_payload;
+
+	::Plugin::ExecuteRequestMessage exec_message;
+	::Plugin::ExecuteRequestMessage::Request *exec_payload;
+
+	::Plugin::QueryRequestMessage query_message;
+	::Plugin::QueryRequestMessage::Request *query_payload;
+
+	types type;
+	std::string separator;
+	payload_builder() : submit_payload(NULL), exec_payload(NULL), query_payload(NULL), type(type_none), separator("|") {}
+
+	void set_type(types type_) {
+		type = type_;
+	}
+
+	void set_separator(const std::string &value) {
+		separator = value;
+	}
+	bool is_query() const {
+		return type == type_query;
+	}
+	bool is_exec() const {
+		return type == type_exec;
+	}
+	bool is_submit() const {
+		return type == type_submit;
+	}
+
+	void set_result(const std::string &value);
+	void set_message(const std::string &value) {
+		if (is_submit()) {
+			Plugin::QueryResponseMessage::Response::Line *l = get_submit_payload()->add_lines();
+			l->set_message(value);
+		} else if (is_exec()) {
+			throw client::cli_exception("message not supported for exec");
+		} else {
+			throw client::cli_exception("message not supported for query");
+		}
+	}
+	void set_command(const std::string value) {
+		if (is_submit()) {
+			get_submit_payload()->set_command(value);
+		} else if (is_exec()) {
+			get_exec_payload()->set_command(value);
+		} else {
+			get_query_payload()->set_command(value);
+		}
+	}
+	void set_arguments(const std::vector<std::string> &value) {
+		if (is_submit()) {
+			throw client::cli_exception("arguments not supported for submit");
+		} else if (is_exec()) {
+			BOOST_FOREACH(const std::string &a, value)
+				get_exec_payload()->add_arguments(a);
+		} else {
+			BOOST_FOREACH(const std::string &a, value)
+				get_query_payload()->add_arguments(a);
+		}
+	}
+	void set_batch(const std::vector<std::string> &data);
+
+private:
+
+	::Plugin::QueryResponseMessage::Response *get_submit_payload() {
+		if (submit_payload == NULL)
+			submit_payload = submit_message.add_payload();
+		return submit_payload;
+	}
+	::Plugin::QueryRequestMessage::Request *get_query_payload() {
+		if (query_payload == NULL)
+			query_payload = query_message.add_payload();
+		return query_payload;
+	}
+	::Plugin::ExecuteRequestMessage::Request *get_exec_payload() {
+		if (exec_payload == NULL)
+			exec_payload = exec_message.add_payload();
+		return exec_payload;
+	}
+};
 
 std::string client::destination_container::to_string() const {
 	std::stringstream ss;
@@ -81,57 +179,57 @@ po::options_description add_common_options(client::destination_container &source
 		("retries", po::value<int>()->notifier(boost::bind(&client::destination_container::set_int_data, &destination, "retry", _1)),
 			"legacy version of retry")
 
-		("source-host", po::value<std::string>()->notifier(boost::bind(&client::destination_container::set_string_data, source, "host", _1)),
+		("source-host", po::value<std::string>()->notifier(boost::bind(&client::destination_container::set_string_data, &source, "host", _1)),
 			"Source/sender host name (default is auto which means use the name of the actual host)")
 
-		("sender-host", po::value<std::string>()->notifier(boost::bind(&client::destination_container::set_string_data, source, "host", _1)),
+		("sender-host", po::value<std::string>()->notifier(boost::bind(&client::destination_container::set_string_data, &source, "host", _1)),
 			"Source/sender host name (default is auto which means use the name of the actual host)")
 
 		;
 	return desc;
 }
-po::options_description add_query_options(client::destination_container &source, client::destination_container &destination, client::payload_builder &builder) {
+po::options_description add_query_options(client::destination_container &source, client::destination_container &destination, payload_builder &builder) {
 	po::options_description desc("Query options");
 	desc.add_options()
-		("command,c", po::value<std::string >()->notifier(boost::bind(&client::payload_builder::set_command, &builder, _1)),
+		("command,c", po::value<std::string >()->notifier(boost::bind(&payload_builder::set_command, &builder, _1)),
 			"The name of the command that the remote daemon should run")
-		("argument,a", po::value<std::vector<std::string> >()->notifier(boost::bind(&client::payload_builder::set_arguments, &builder, _1)),
+		("argument,a", po::value<std::vector<std::string> >()->notifier(boost::bind(&payload_builder::set_arguments, &builder, _1)),
 			"Set command line arguments")
-		("separator", po::value<std::string>()->notifier(boost::bind(&client::payload_builder::set_separator, &builder, _1)),
+		("separator", po::value<std::string>()->notifier(boost::bind(&payload_builder::set_separator, &builder, _1)),
 			"Separator to use for the batch command (default is |)")
-		("batch", po::value<std::vector<std::string> >()->notifier(boost::bind(&client::payload_builder::set_batch, &builder, _1)),
+		("batch", po::value<std::vector<std::string> >()->notifier(boost::bind(&payload_builder::set_batch, &builder, _1)),
 			"Add multiple records using the separator format is: command|argument|argument")
 		;
 	return desc;
 }
-po::options_description add_submit_options(client::destination_container &source, client::destination_container &destination, client::payload_builder &builder) {
+po::options_description add_submit_options(client::destination_container &source, client::destination_container &destination, payload_builder &builder) {
 	po::options_description desc("Submit options");
 	desc.add_options()
-		("command,c", po::value<std::string >()->notifier(boost::bind(&client::payload_builder::set_command, &builder, _1)),
+		("command,c", po::value<std::string >()->notifier(boost::bind(&payload_builder::set_command, &builder, _1)),
 			"The name of the command that the remote daemon should run")
-		("alias,a", po::value<std::string>()->notifier(boost::bind(&client::payload_builder::set_command, &builder, _1)),
+		("alias,a", po::value<std::string>()->notifier(boost::bind(&payload_builder::set_command, &builder, _1)),
 			"Same as command")
-		("message,m", po::value<std::string>()->notifier(boost::bind(&client::payload_builder::set_message, &builder, _1)),
+		("message,m", po::value<std::string>()->notifier(boost::bind(&payload_builder::set_message, &builder, _1)),
 			"Message")
-		("result,r", po::value<std::string>()->notifier(boost::bind(&client::payload_builder::set_result, &builder, _1)),
+		("result,r", po::value<std::string>()->notifier(boost::bind(&payload_builder::set_result, &builder, _1)),
 			"Result code either a number or OK, WARN, CRIT, UNKNOWN")
-		("separator", po::value<std::string>()->notifier(boost::bind(&client::payload_builder::set_separator, &builder, _1)),
+		("separator", po::value<std::string>()->notifier(boost::bind(&payload_builder::set_separator, &builder, _1)),
 			"Separator to use for the batch command (default is |)")
-		("batch", po::value<std::vector<std::string> >()->notifier(boost::bind(&client::payload_builder::set_batch, &builder, _1)),
+		("batch", po::value<std::vector<std::string> >()->notifier(boost::bind(&payload_builder::set_batch, &builder, _1)),
 			"Add multiple records using the separator format is: command|result|message")
 		;
 	return desc;
 }
-po::options_description add_exec_options(client::destination_container &source, client::destination_container &destination, client::payload_builder &builder) {
+po::options_description add_exec_options(client::destination_container &source, client::destination_container &destination, payload_builder &builder) {
 	po::options_description desc("Execute options");
 	desc.add_options()
-		("command,c", po::value<std::string >()->notifier(boost::bind(&client::payload_builder::set_command, &builder, _1)),
+		("command,c", po::value<std::string >()->notifier(boost::bind(&payload_builder::set_command, &builder, _1)),
 			"The name of the command that the remote daemon should run")
-		("argument", po::value<std::vector<std::string> >()->notifier(boost::bind(&client::payload_builder::set_arguments, &builder, _1)),
+		("argument", po::value<std::vector<std::string> >()->notifier(boost::bind(&payload_builder::set_arguments, &builder, _1)),
 			"Set command line arguments")
-		("separator", po::value<std::string>()->notifier(boost::bind(&client::payload_builder::set_separator, &builder, _1)),
+		("separator", po::value<std::string>()->notifier(boost::bind(&payload_builder::set_separator, &builder, _1)),
 			"Separator to use for the batch command (default is |)")
-		("batch", po::value<std::vector<std::string> >()->notifier(boost::bind(&client::payload_builder::set_batch, &builder, _1)),
+		("batch", po::value<std::vector<std::string> >()->notifier(boost::bind(&payload_builder::set_batch, &builder, _1)),
 			"Add multiple records using the separator format is: command|argument|argument")
 		;
 	return desc;
@@ -140,7 +238,7 @@ po::options_description add_exec_options(client::destination_container &source, 
 std::string client::configuration::add_command(std::string name, std::string args) {
 	command_container data;
 	bool first = true;
-	BOOST_FOREACH(const std::string &s, strEx::s::parse_command(args)) {
+	BOOST_FOREACH(const std::string &s, str::utils::parse_command(args)) {
 		if (first) {
 			data.command = s;
 			first = false;
@@ -183,7 +281,7 @@ void client::configuration::do_query(const Plugin::QueryRequestMessage &request,
 	else if (request.header().has_destination_id())
 		target = request.header().destination_id();
 
-	BOOST_FOREACH(const std::string t, strEx::s::splitEx(target, std::string(","))) {
+	BOOST_FOREACH(const std::string t, str::utils::split_lst(target, std::string(","))) {
 		destination_container d = get_target(t);
 		destination_container s = get_sender();
 
@@ -334,7 +432,7 @@ bool client::configuration::do_exec(const Plugin::ExecuteRequestMessage &request
 	else if (request.header().has_destination_id())
 		target = request.header().destination_id();
 
-	BOOST_FOREACH(const std::string t, strEx::s::splitEx(target, std::string(","))) {
+	BOOST_FOREACH(const std::string t, str::utils::split_lst(target, std::string(","))) {
 		destination_container d = get_target(t);
 		destination_container s = get_sender();
 
@@ -497,7 +595,7 @@ void client::configuration::do_submit(const Plugin::SubmitRequestMessage &reques
 	else if (request.header().has_destination_id() && !request.header().destination_id().empty())
 		target = request.header().destination_id();
 
-	BOOST_FOREACH(const std::string t, strEx::s::splitEx(target, std::string(","))) {
+	BOOST_FOREACH(const std::string t, str::utils::split_lst(target, std::string(","))) {
 		destination_container d = get_target(t);
 		destination_container s = get_sender();
 
@@ -552,7 +650,7 @@ void client::configuration::do_metrics(const Plugin::MetricsMessage &request) {
 	else if (request.header().has_destination_id())
 		target = request.header().destination_id();
 
-	BOOST_FOREACH(const std::string t, strEx::s::splitEx(target, std::string(","))) {
+	BOOST_FOREACH(const std::string t, str::utils::split_lst(target, std::string(","))) {
 		destination_container d = get_target(t);
 		destination_container s = get_sender();
 
@@ -567,4 +665,56 @@ void client::configuration::do_metrics(const Plugin::MetricsMessage &request) {
 void client::configuration::finalize(boost::shared_ptr<nscapi::settings_proxy> settings) {
 	targets.add_samples(settings);
 	targets.add_missing(settings, "default", "");
+}
+
+void payload_builder::set_result(const std::string &value) {
+	if (is_submit()) {
+		get_submit_payload()->set_result(nscapi::protobuf::functions::parse_nagios(value));
+	} else if (is_exec()) {
+		throw client::cli_exception("result not supported for exec");
+	} else {
+		throw client::cli_exception("result not supported for query");
+	}
+}
+
+void payload_builder::set_batch(const std::vector<std::string> &data) {
+	if (is_submit()) {
+		BOOST_FOREACH(const std::string &e, data) {
+			submit_payload = submit_message.add_payload();
+			std::vector<std::string> line;
+			boost::iter_split(line, e, boost::algorithm::first_finder(separator));
+			if (line.size() >= 3)
+				set_message(line[2]);
+			if (line.size() >= 2)
+				set_result(line[1]);
+			if (line.size() >= 1)
+				set_command(line[0]);
+		}
+	} else if (type == type_exec) {
+		BOOST_FOREACH(const std::string &e, data) {
+			exec_payload = exec_message.add_payload();
+			std::list<std::string> line;
+			boost::iter_split(line, e, boost::algorithm::first_finder(separator));
+			if (line.size() >= 1) {
+				set_command(line.front());
+				line.pop_front();
+			}
+			BOOST_FOREACH(const std::string &a, line) {
+				get_exec_payload()->add_arguments(a);
+			}
+		}
+	} else {
+		BOOST_FOREACH(const std::string &e, data) {
+			query_payload = query_message.add_payload();
+			std::list<std::string> line;
+			boost::iter_split(line, e, boost::algorithm::first_finder(separator));
+			if (line.size() >= 1) {
+				set_command(line.front());
+				line.pop_front();
+			}
+			BOOST_FOREACH(const std::string &a, line) {
+				get_query_payload()->add_arguments(a);
+			}
+		}
+	}
 }

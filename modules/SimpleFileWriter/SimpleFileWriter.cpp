@@ -1,41 +1,44 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#include "SimpleFileWriter.h"
+
+#include <nscapi/nscapi_protobuf_functions.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+#include <nscapi/nscapi_core_helper.hpp>
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
+#include <nscapi/nscapi_helper.hpp>
+#include <nscapi/nscapi_settings_helper.hpp>
+
+#include <parsers/expression/expression.hpp>
+
+#include <nsclient/nsclient_exception.hpp>
+
+#include <boost/foreach.hpp>
+#include <boost/bind.hpp>
+#include <boost/date_time.hpp>
 
 #include <map>
 #include <vector>
 #include <ostream>
 #include <fstream>
-
-#include <boost/foreach.hpp>
-#include <boost/bind.hpp>
-#include <boost/assign.hpp>
-#include <boost/optional.hpp>
-#include <boost/date_time.hpp>
-
-#include <nscapi/nscapi_protobuf_functions.hpp>
-#include <nscapi/nscapi_core_helper.hpp>
-#include <nscapi/nscapi_helper_singleton.hpp>
-#include <nscapi/macros.hpp>
-#include <nscapi/nscapi_helper.hpp>
-
-#include <parsers/expression/expression.hpp>
-
-#include <nscapi/nscapi_settings_helper.hpp>
-
-#include "SimpleFileWriter.h"
 
 namespace sh = nscapi::settings_helper;
 
@@ -93,7 +96,7 @@ struct payload_result_functor {
 };
 struct payload_result_nr_functor {
 	std::string operator() (const config_object&, const std::string, const Plugin::Common::Header &, const Plugin::QueryResponseMessage::Response &payload) {
-		return strEx::s::xtos(nscapi::protobuf::functions::gbp_to_nagios_status(payload.result()));
+		return str::xtos(nscapi::protobuf::functions::gbp_to_nagios_status(payload.result()));
 	}
 };
 struct payload_alias_or_command_functor {
@@ -109,7 +112,7 @@ struct epoch_functor {
 		boost::posix_time::ptime time_t_epoch(boost::gregorian::date(1970, 1, 1));
 		boost::posix_time::ptime now = boost::posix_time::second_clock::universal_time();
 		boost::posix_time::time_duration diff = now - time_t_epoch;
-		return strEx::s::xtos(diff.total_seconds());
+		return str::xtos(diff.total_seconds());
 	}
 };
 
@@ -182,7 +185,7 @@ bool SimpleFileWriter::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode) {
 		build_syntax(parser, syntax_host, syntax_host_lookup_);
 		build_syntax(parser, syntax_service, syntax_service_lookup_);
 
-	} catch (nscapi::nscapi_exception &e) {
+	} catch (nsclient::nsclient_exception &e) {
 		NSC_LOG_ERROR_EXR("Failed to register command: ", e);
 		return false;
 	} catch (std::exception &e) {
@@ -246,12 +249,12 @@ void SimpleFileWriter::handleNotification(const std::string &, const Plugin::Que
 	{
 		boost::unique_lock<boost::shared_mutex> lock(cache_mutex_);
 		if (!lock) {
-			nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), Plugin::Common_Result_StatusCodeType_STATUS_ERROR, "Failed to get lock");
+			nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), false, "Failed to get lock");
 			return;
 		}
 		std::ofstream out;
 		out.open(filename_.c_str(), std::ios::out | std::ios::app);
 		out << key << std::endl;
 	}
-	nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), Plugin::Common_Result_StatusCodeType_STATUS_OK, "message has been written");
+	nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), true, "message has been written");
 }

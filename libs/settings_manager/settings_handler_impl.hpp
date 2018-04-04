@@ -1,32 +1,39 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <string>
-#include <map>
-#include <set>
+#include <settings/settings_core.hpp>
+#include <settings/settings_value.hpp>
+
+#include <nsclient/logger/logger.hpp>
+
 #include <boost/thread/thread.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/regex.hpp>
-#include <strEx.h>
-#include <settings/settings_core.hpp>
-#include <nsclient/logger/logger.hpp>
+#include <boost/foreach.hpp>
+
+#include <string>
+#include <map>
+#include <set>
 
 namespace settings {
 	class settings_handler_impl : public settings_core {
@@ -151,7 +158,7 @@ namespace settings {
 		/// @param advanced advanced options will only be included if they are changed
 		///
 		/// @author mickem
-		void register_path(unsigned int plugin_id, std::string path, std::string title, std::string description, bool advanced, bool is_sample, bool update_existing = true) {
+		void register_path(unsigned int plugin_id, std::string path, std::string title, std::string description, bool advanced, bool is_sample, bool update_existing) {
 			boost::unique_lock<boost::shared_mutex> writeLock(registry_mutex_, boost::get_system_time() + boost::posix_time::seconds(10));
 			if (!writeLock.owns_lock()) {
 				throw settings_exception(__FILE__, __LINE__, "Failed to lock registry mutex: " + path);
@@ -161,6 +168,34 @@ namespace settings {
 				registred_paths_[path] = path_description(plugin_id, title, description, advanced, is_sample);
 			} else if (update_existing) {
 				(*it).second.update(plugin_id, title, description, advanced, is_sample);
+			}
+		}
+
+		//////////////////////////////////////////////////////////////////////////
+		/// Register a path with the settings module.
+		/// A registered key or path will be nicely documented in some of the settings files when converted.
+		///
+		/// @param path The path to register
+		/// @param type The type of value
+		/// @param title The title to use
+		/// @param description the description to use
+		/// @param defValue the default value
+		/// @param advanced advanced options will only be included if they are changed
+		///
+		/// @author mickem
+		void register_subkey(unsigned int plugin_id, std::string path, std::string title, std::string description, bool advanced, bool is_sample, bool update_existing) {
+			boost::unique_lock<boost::shared_mutex> writeLock(registry_mutex_, boost::get_system_time() + boost::posix_time::seconds(10));
+			if (!writeLock.owns_lock()) {
+				throw settings_exception(__FILE__, __LINE__, "Failed to lock registry mutex: " + path);
+			}
+			reg_paths_type::iterator it = registred_paths_.find(path);
+			if (it == registred_paths_.end()) {
+				registred_paths_[path] = path_description(plugin_id, title, description, advanced, is_sample);
+				registred_paths_[path].subkey = subkey_description(title, description, advanced, is_sample);
+			} else {
+				if (!registred_paths_[path].subkey.is_subkey || update_existing) {
+					registred_paths_[path].subkey = subkey_description(title, description, advanced, is_sample);
+				}
 			}
 		}
 
@@ -176,7 +211,7 @@ namespace settings {
 		/// @param advanced advanced options will only be included if they are changed
 		///
 		/// @author mickem
-		void register_key(unsigned int plugin_id, std::string path, std::string key, settings_core::key_type type, std::string title, std::string description, std::string defValue, bool advanced, bool is_sample, bool update_existing = true) {
+		void register_key(unsigned int plugin_id, std::string path, std::string key, settings_core::key_type type, std::string title, std::string description, nscapi::settings::settings_value defValue, bool advanced, bool is_sample, bool update_existing = true) {
 			boost::unique_lock<boost::shared_mutex> writeLock(registry_mutex_, boost::get_system_time() + boost::posix_time::seconds(10));
 			if (!writeLock.owns_lock()) {
 				throw settings_exception(__FILE__, __LINE__, "Failed to lock registry mutex: " + path + "." + key);

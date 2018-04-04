@@ -1,36 +1,42 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-#include <map>
-#include <string>
-
-#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
-#include <windows.h>
-#include <tchar.h>
-#include <iostream>
-
-#include <buffer.hpp>
-#include <handle.hpp>
-#include <error.hpp>
-#include <format.hpp>
 
 #include <win_sysinfo/win_defines.hpp>
 #include <win_sysinfo/win_sysinfo.hpp>
 
 #include "EnumProcess.h"
+
+#include <buffer.hpp>
+#include <handle.hpp>
+#include <nsclient/nsclient_exception.hpp>
+#include <utf8.hpp>
+#include <str/xtos.hpp>
+#include <error/error.hpp>
+#include <str/format.hpp>
+
+#include <map>
+#include <string>
+#include <iostream>
+
+#define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
+#include <windows.h>
+#include <tchar.h>
 
 #include <Psapi.h>
 
@@ -49,7 +55,7 @@ namespace process_helper {
 		TOKEN_PRIVILEGES token_privileges;
 		LUID luid;
 		if (!LookupPrivilegeValue(NULL, privilege, &luid))
-			throw nscp_exception("Failed to lookup privilege: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to lookup privilege: " + error::lookup::last_error());
 		ZeroMemory(&token_privileges, sizeof(TOKEN_PRIVILEGES));
 		token_privileges.PrivilegeCount = 1;
 		token_privileges.Privileges[0].Luid = luid;
@@ -58,9 +64,9 @@ namespace process_helper {
 		else
 			token_privileges.Privileges[0].Attributes = 0;
 		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, token.ref()))
-			throw nscp_exception("Failed to open process token: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to open process token: " + error::lookup::last_error());
 		if (!AdjustTokenPrivileges(token.get(), FALSE, &token_privileges, sizeof(TOKEN_PRIVILEGES), (PTOKEN_PRIVILEGES)NULL, (PDWORD)NULL))
-			throw nscp_exception("Failed to adjust token privilege: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to adjust token privilege: " + error::lookup::last_error());
 	}
 
 	struct find_16bit_container {
@@ -135,7 +141,7 @@ namespace process_helper {
 		/* read the command line */
 		if (!ReadProcessMemory(hProcess, commandLine.Buffer, commandLineContents, commandLine.Length, NULL)) {
 			delete[] commandLineContents;
-			throw nscp_exception("Could not read command line string: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Could not read command line string: " + error::lookup::last_error());
 		}
 
 		commandLineContents[(commandLine.Length / sizeof(WCHAR))] = '\0';
@@ -161,7 +167,7 @@ namespace process_helper {
 				DWORD err = GetLastError();
 				entry.unreadable = true;
 				if (!ignore_unreadable || err != ERROR_ACCESS_DENIED)
-					entry.set_error("Failed to open process " + strEx::s::xtos(pid) + ": " + error::lookup::last_error());
+					entry.set_error("Failed to open process " + str::xtos(pid) + ": " + error::lookup::last_error());
 				return entry;
 			}
 		}
@@ -204,7 +210,7 @@ namespace process_helper {
 				entry.user_time_raw = (userTime.dwHighDateTime * ((unsigned long long)MAXDWORD + 1)) + (unsigned long long)userTime.dwLowDateTime;
 				entry.kernel_time = entry.kernel_time_raw / 10000000;
 				entry.user_time = entry.user_time_raw / 10000000;
-				entry.creation_time = format::filetime_to_time((creationTime.dwHighDateTime * ((unsigned long long)MAXDWORD + 1)) + (unsigned long long)creationTime.dwLowDateTime);
+				entry.creation_time = str::format::filetime_to_time((creationTime.dwHighDateTime * ((unsigned long long)MAXDWORD + 1)) + (unsigned long long)creationTime.dwLowDateTime);
 			}
 
 			SIZE_T minimumWorkingSetSize;
@@ -262,14 +268,15 @@ namespace process_helper {
 			TCHAR buffer[MAX_FILENAME + 1];
 			if (!GetModuleFileNameEx(handle, hMod, reinterpret_cast<LPTSTR>(&buffer), MAX_FILENAME)) {
 				CloseHandle(handle);
-				throw nscp_exception("Failed to find name for: " + strEx::s::xtos(pid) + ": " + error::lookup::last_error());
+				throw nsclient::nsclient_exception("Failed to find name for: " + str::xtos(pid) + ": " + error::lookup::last_error());
 			} else {
 				std::wstring path = buffer;
+				entry.filename = utf8::cvt<std::string>(path);
 				std::wstring::size_type pos = path.find_last_of(_T("\\"));
 				if (pos != std::wstring::npos) {
 					path = path.substr(++pos);
 				}
-				entry.filename = utf8::cvt<std::string>(path);
+				entry.exe = utf8::cvt<std::string>(path);
 			}
 		}
 		return entry;
@@ -278,7 +285,7 @@ namespace process_helper {
 	process_list enumerate_processes(bool ignore_unreadable, bool find_16bit, bool deep_scan, error_reporter *error_interface, unsigned int buffer_size) {
 		try {
 			enable_token_privilege(SE_DEBUG_NAME, true);
-		} catch (nscp_exception &e) {
+		} catch (const nsclient::nsclient_exception &e) {
 			if (error_interface != NULL)
 				error_interface->report_warning(e.reason());
 		}
@@ -290,12 +297,12 @@ namespace process_helper {
 		if (cbNeeded >= DEFAULT_BUFFER_SIZE*sizeof(DWORD)) {
 			delete[] dwPIDs;
 			if (error_interface != NULL)
-				error_interface->report_debug("Need larger buffer: " + strEx::s::xtos(buffer_size));
+				error_interface->report_debug("Need larger buffer: " + str::xtos(buffer_size));
 			return enumerate_processes(ignore_unreadable, find_16bit, deep_scan, error_interface, buffer_size * 10);
 		}
 		if (!OK) {
 			delete[] dwPIDs;
-			throw nscp_exception("Failed to enumerate process: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to enumerate process: " + error::lookup::last_error());
 		}
 		unsigned int process_count = cbNeeded / sizeof(DWORD);
 		for (unsigned int i = 0; i < process_count; ++i) {
@@ -306,11 +313,11 @@ namespace process_helper {
 			try {
 				try {
 					entry = describe_pid(dwPIDs[i], deep_scan, ignore_unreadable);
-				} catch (const nscp_exception &e) {
+				} catch (const nsclient::nsclient_exception &e) {
 					if (deep_scan) {
 						try {
 							entry = describe_pid(dwPIDs[i], false, ignore_unreadable);
-						} catch (const nscp_exception &e) {
+						} catch (const nsclient::nsclient_exception &e) {
 							if (error_interface != NULL)
 								error_interface->report_debug(e.reason());
 						}
@@ -330,12 +337,12 @@ namespace process_helper {
 				if (ignore_unreadable && entry.unreadable)
 					continue;
 				ret.push_back(entry);
-			} catch (const nscp_exception &e) {
+			} catch (const nsclient::nsclient_exception &e) {
 				if (error_interface != NULL)
-					error_interface->report_error("Exception describing PID: " + strEx::s::xtos(dwPIDs[i]) + ": " + e.reason());
+					error_interface->report_error("Exception describing PID: " + str::xtos(dwPIDs[i]) + ": " + e.reason());
 			} catch (...) {
 				if (error_interface != NULL)
-					error_interface->report_error("Unknown exception describing PID: " + strEx::s::xtos(dwPIDs[i]));
+					error_interface->report_error("Unknown exception describing PID: " + str::xtos(dwPIDs[i]));
 			}
 		}
 
@@ -351,7 +358,7 @@ namespace process_helper {
 
 		try {
 			enable_token_privilege(SE_DEBUG_NAME, false);
-		} catch (nscp_exception &e) {
+		} catch (const nsclient::nsclient_exception &e) {
 			if (error_interface != NULL)
 				error_interface->report_warning(e.reason());
 		}
@@ -368,12 +375,12 @@ namespace process_helper {
 		if (cbNeeded >= DEFAULT_BUFFER_SIZE*sizeof(DWORD)) {
 			delete[] dwPIDs;
 			if (error_interface != NULL)
-				error_interface->report_debug("Need larger buffer: " + strEx::s::xtos(buffer_size));
+				error_interface->report_debug("Need larger buffer: " + str::xtos(buffer_size));
 			return get_process_data(ignore_unreadable, error_interface, buffer_size * 10);
 		}
 		if (!OK) {
 			delete[] dwPIDs;
-			throw nscp_exception("Failed to enumerate process: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to enumerate process: " + error::lookup::last_error());
 		}
 		unsigned int process_count = cbNeeded / sizeof(DWORD);
 		for (unsigned int i = 0; i < process_count; ++i) {
@@ -384,18 +391,18 @@ namespace process_helper {
 			try {
 				try {
 					entry = describe_pid(dwPIDs[i], true, ignore_unreadable);
-				} catch (const nscp_exception &e) {
+				} catch (const nsclient::nsclient_exception &e) {
 					if (!ignore_unreadable && error_interface != NULL)
 						error_interface->report_debug(e.reason());
 					continue;
 				}
 				ret[dwPIDs[i]] = entry;
-			} catch (const nscp_exception &e) {
+			} catch (const nsclient::nsclient_exception &e) {
 				if (error_interface != NULL)
-					error_interface->report_error("Exception describing PID: " + strEx::s::xtos(dwPIDs[i]) + ": " + e.reason());
+					error_interface->report_error("Exception describing PID: " + str::xtos(dwPIDs[i]) + ": " + e.reason());
 			} catch (...) {
 				if (error_interface != NULL)
-					error_interface->report_error("Unknown exception describing PID: " + strEx::s::xtos(dwPIDs[i]));
+					error_interface->report_error("Unknown exception describing PID: " + str::xtos(dwPIDs[i]));
 			}
 		}
 		delete[] dwPIDs;
@@ -406,7 +413,7 @@ namespace process_helper {
 		process_list ret;
 		try {
 			enable_token_privilege(SE_DEBUG_NAME, true);
-		} catch (nscp_exception &e) {
+		} catch (const nsclient::nsclient_exception &e) {
 			if (error_interface != NULL)
 				error_interface->report_error(e.reason());
 		}
@@ -437,7 +444,7 @@ namespace process_helper {
 			process_map::iterator v2 = p2.find(v1.first);
 			if (v2 == p2.end()) {
 				if (error_interface != NULL)
-					error_interface->report_debug("process died: " + strEx::s::xtos(v1.first));
+					error_interface->report_debug("process died: " + str::xtos(v1.first));
 				continue;
 			}
 			v2->second -= v1.second;
@@ -447,7 +454,7 @@ namespace process_helper {
 
 		try {
 			enable_token_privilege(SE_DEBUG_NAME, false);
-		} catch (nscp_exception &e) {
+		} catch (const nsclient::nsclient_exception &e) {
 			if (error_interface != NULL)
 				error_interface->report_error(e.reason());
 		}

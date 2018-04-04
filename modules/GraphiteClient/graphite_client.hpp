@@ -1,28 +1,35 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
 #include <socket/socket_helpers.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+
+#include <boost/tuple/tuple.hpp>
 
 namespace graphite_client {
 	struct connection_data : public socket_helpers::connection_info {
 		std::string ppath;
 		std::string spath;
+		std::string mpath;
 		std::string sender_hostname;
 		bool send_perf;
 		bool send_status;
@@ -36,6 +43,7 @@ namespace graphite_client {
 			spath = target.get_string_data("status path");
 			send_perf = target.get_bool_data("send perfdata");
 			send_status = target.get_bool_data("send status");
+			mpath = target.get_string_data("metric path");
 			if (sender.has_data("host"))
 				sender_hostname = sender.get_string_data("host");
 			else 
@@ -56,10 +64,13 @@ namespace graphite_client {
 
 	std::string fix_graphite_string(const std::string &s) {
 		std::string sc = s;
-		strEx::s::replace(sc, " ", "_");
-		strEx::s::replace(sc, "\\", "_");
-		strEx::s::replace(sc, "[", "_");
-		strEx::s::replace(sc, "]", "_");
+		str::utils::replace(sc, " ", "_");
+		str::utils::replace(sc, "\\", "_");
+		str::utils::replace(sc, "[", "_");
+		str::utils::replace(sc, "]", "_");
+		str::utils::replace(sc, "(", "_");
+		str::utils::replace(sc, ")", "_");
+		str::utils::replace(sc, "%", "percent");
 		return sc;
 	}
 	struct graphite_client_handler : public client::handler_interface {
@@ -74,21 +85,21 @@ namespace graphite_client {
 			nscapi::protobuf::functions::make_return_header(response_message.mutable_header(), request_header);
 			std::string ppath = con.ppath;
 			std::string spath = con.spath;
-			strEx::s::replace(ppath, "${hostname}", con.sender_hostname);
-			strEx::s::replace(spath, "${hostname}", con.sender_hostname);
+			str::utils::replace(ppath, "${hostname}", con.sender_hostname);
+			str::utils::replace(spath, "${hostname}", con.sender_hostname);
 
 			std::list<g_data> list;
 
 			BOOST_FOREACH(const ::Plugin::QueryResponseMessage_Response &p, request_message.payload()) {
 				std::string tmp_path = ppath;
-				strEx::s::replace(tmp_path, "${check_alias}", p.alias());
+				str::utils::replace(tmp_path, "${check_alias}", p.alias());
 
 				if (con.send_perf) {
 					BOOST_FOREACH(const ::Plugin::QueryResponseMessage::Response::Line &l, p.lines()) {
 						BOOST_FOREACH(const ::Plugin::Common_PerformanceData &perf, l.perf()) {
 							g_data d;
 							d.path = tmp_path;
-							strEx::s::replace(d.path, "${perf_alias}", perf.alias());
+							str::utils::replace(d.path, "${perf_alias}", perf.alias());
 							d.value = nscapi::protobuf::functions::extract_perf_value_as_string(perf);
 							d.path = fix_graphite_string(d.path);
 							list.push_back(d);
@@ -98,9 +109,9 @@ namespace graphite_client {
 				if (con.send_status) {
 					g_data d;
 					d.path = spath;
-					strEx::s::replace(d.path, "${check_alias}", p.alias());
-					strEx::s::replace(d.path, " ", "_");
-					d.value = strEx::s::xtos(nscapi::protobuf::functions::gbp_to_nagios_status(p.result()));
+					str::utils::replace(d.path, "${check_alias}", p.alias());
+					str::utils::replace(d.path, " ", "_");
+					d.value = str::xtos(nscapi::protobuf::functions::gbp_to_nagios_status(p.result()));
 					list.push_back(d);
 				}
 
@@ -123,23 +134,25 @@ namespace graphite_client {
 		}
 
 
-		void push_metrics(std::list<graphite_client::g_data> &list, const Plugin::Common::MetricsBundle &b, std::string path) {
+		void push_metrics(std::list<graphite_client::g_data> &list, const Plugin::Common::MetricsBundle &b, std::string path, std::string mpath) {
 			std::string mypath;
 			if (!path.empty())
 				mypath = path + ".";
 			mypath += b.key();
 			BOOST_FOREACH(const Plugin::Common::MetricsBundle &b2, b.children()) {
-				push_metrics(list, b2, mypath);
+				push_metrics(list, b2, mypath, mpath);
 			}
 			BOOST_FOREACH(const Plugin::Common::Metric &v, b.value()) {
 				graphite_client::g_data d;
 				const ::Plugin::Common_AnyDataType &value = v.value();
-				d.path = fix_graphite_string(mypath + "." + v.key());
+				d.path = mpath;
+				str::utils::replace(d.path, "${metric}", mypath + "." + v.key());
+				d.path = fix_graphite_string(d.path);
 				if (value.has_int_data()) {
-					d.value = strEx::s::xtos(v.value().int_data());
+					d.value = str::xtos(v.value().int_data());
 					list.push_back(d);
 				} else if (value.has_float_data()) {
-					d.value = strEx::s::xtos(v.value().float_data());
+					d.value = str::xtos(v.value().float_data());
 					list.push_back(d);
 				}
 			}
@@ -147,12 +160,15 @@ namespace graphite_client {
 
 		bool metrics(client::destination_container sender, client::destination_container target, const Plugin::MetricsMessage &request_message) {
 			std::list<graphite_client::g_data> list;
+			connection_data con(sender, target);
+			std::string mpath = con.mpath;
+			str::utils::replace(mpath, "${hostname}", con.sender_hostname);
+
 			BOOST_FOREACH(const Plugin::MetricsMessage::Response &r, request_message.payload()) {
 				BOOST_FOREACH(const Plugin::Common::MetricsBundle &b, r.bundles()) {
-					push_metrics(list, b, "");
+					push_metrics(list, b, "", mpath);
 				}
 			}
-			connection_data con(sender, target);
 			send(con, list);
 			return true;
 		}

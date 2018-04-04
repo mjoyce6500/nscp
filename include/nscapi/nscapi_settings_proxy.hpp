@@ -1,29 +1,31 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <list>
+#include <nscapi/nscapi_core_wrapper.hpp>
+#include <nscapi/dll_defines.hpp>
 
 #include <settings/settings_core.hpp>
 #include <settings/client/settings_client_interface.hpp>
 
-#include <nscapi/nscapi_core_wrapper.hpp>
-
-#include <nscapi/dll_defines.hpp>
+#include <list>
 
 namespace nscapi {
 	class NSCAPI_EXPORT settings_proxy : public nscapi::settings_helper::settings_impl_interface {
@@ -37,7 +39,8 @@ namespace nscapi {
 		typedef std::list<std::string> string_list;
 
 		virtual void register_path(std::string path, std::string title, std::string description, bool advanced, bool sample);
-		virtual void register_key(std::string path, std::string key, int type, std::string title, std::string description, std::string defValue, bool advanced, bool sample);
+		virtual void register_key(std::string path, std::string key, int type, std::string title, std::string description, nscapi::settings::settings_value defValue, bool advanced, bool sample);
+		virtual void register_subkey(std::string path, std::string title, std::string description, bool advanced, bool sample);
 		virtual void register_tpl(std::string path, std::string title, std::string icon, std::string description, std::string fields);
 
 		virtual std::string get_string(std::string path, std::string key, std::string def);
@@ -49,6 +52,9 @@ namespace nscapi {
 		virtual string_list get_sections(std::string path);
 		virtual string_list get_keys(std::string path);
 		virtual std::string expand_path(std::string key);
+
+		virtual void remove_key(std::string path, std::string key);
+		virtual void remove_path(std::string path);
 
 		virtual void err(const char* file, int line, std::string message);
 		virtual void warn(const char* file, int line, std::string message);

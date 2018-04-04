@@ -1,30 +1,37 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
+
+#include <settings/settings_core.hpp>
+
+#include <nsclient/logger/logger.hpp>
+
+#include <str/xtos.hpp>
+#include <str/wstring.hpp>
+
+#include <simpleini/SimpleIni.h>
 
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <map>
-#include <settings/settings_core.hpp>
-#include <simpleini/SimpleIni.h>
-#include <nsclient/logger/logger.hpp>
-
-#include <strEx.h>
 
 namespace settings {
 	class OLDSettings : public settings::settings_interface_impl {
@@ -65,17 +72,17 @@ namespace settings {
 				}
 			}
 			void read_map_data(const std::string data) {
-				BOOST_FOREACH(const std::string &l, strEx::s::splitEx(data, std::string("\n"))) {
+				BOOST_FOREACH(const std::string &l, str::utils::split_lst(data, std::string("\n"))) {
 					parse_line(utf8::cvt<std::wstring>(l));
 				}
 			}
 			void parse_line(std::wstring line) {
-				strEx::replace(line, _T("\n"), _T(""));
-				strEx::replace(line, _T("\r"), _T(""));
+				strEx::replace(line, L"\n", L"");
+				strEx::replace(line, L"\r", L"");
 				std::wstring::size_type pos = line.find('#');
 				if (pos != -1)
 					line = line.substr(0, pos);
-				pos = line.find_first_not_of(_T(" \t\n\r"));
+				pos = line.find_first_not_of(L" \t\n\r");
 				if (pos == -1)
 					return;
 				line = line.substr(pos);
@@ -86,7 +93,7 @@ namespace settings {
 				}
 				std::pair<std::wstring, std::wstring> old_key = split_key(line.substr(0, pos));
 				std::pair<std::wstring, std::wstring> new_key = split_key(line.substr(pos + 1));
-				if (old_key.second == _T("*") || old_key.second.empty()) {
+				if (old_key.second == L"*" || old_key.second.empty()) {
 					add(utf8::cvt<std::string>(line.substr(pos + 1)), utf8::cvt<std::string>(old_key.first));
 				} else {
 					add(utf8::cvt<std::string>(new_key.first), utf8::cvt<std::string>(new_key.second), utf8::cvt<std::string>(old_key.first), utf8::cvt<std::string>(old_key.second));
@@ -96,7 +103,7 @@ namespace settings {
 				std::pair<std::wstring, std::wstring> ret;
 				std::wstring::size_type pos = key.find_last_of('/');
 				if (pos == -1)
-					return std::pair<std::wstring, std::wstring>(key, _T(""));
+					return std::pair<std::wstring, std::wstring>(key, L"");
 				return std::pair<std::wstring, std::wstring>(key.substr(0, pos), key.substr(pos + 1));
 			}
 
@@ -117,7 +124,6 @@ namespace settings {
 			settings_core::key_path_type key(settings_core::key_path_type new_key) {
 				key_map::iterator it1 = keys_.find(new_key);
 				if (it1 != keys_.end()) {
-					//get_logger()->debug(__FILE__, __LINE__, new_key.first + _T(".") + new_key.second + _T(" found in alias list"));
 					return (*it1).second;
 				}
 				path_map::iterator it2 = sections_.find(new_key.first);
@@ -127,8 +133,8 @@ namespace settings {
 				return new_key;
 			}
 			std::string status() {
-				return "Sections: " + strEx::s::xtos(sections_.size()) + ", "
-					+ "Keys: " + strEx::s::xtos(keys_.size())
+				return "Sections: " + str::xtos(sections_.size()) + ", "
+					+ "Keys: " + str::xtos(keys_.size())
 					;
 			}
 
@@ -207,13 +213,13 @@ namespace settings {
 				return internal_get_value(in_key.first, in_key.second);
 			return op_string();
 		}
-#define UNLIKELY_STRING _T("$$$EMPTY_KEY$$$")
+#define UNLIKELY_STRING L"$$$EMPTY_KEY$$$"
 
 		std::string internal_get_value(std::string path, std::string key, int bufferSize = 1024) {
 			TCHAR* buffer = new TCHAR[bufferSize + 2];
 			if (buffer == NULL)
 				throw settings_exception(__FILE__, __LINE__, "Out of memory error!");
-			int retVal = GetPrivateProfileString(utf8::cvt<std::wstring>(path).c_str(), utf8::cvt<std::wstring>(key).c_str(), _T(""), buffer, bufferSize, utf8::cvt<std::wstring>(get_file_name()).c_str());
+			int retVal = GetPrivateProfileString(utf8::cvt<std::wstring>(path).c_str(), utf8::cvt<std::wstring>(key).c_str(), L"", buffer, bufferSize, utf8::cvt<std::wstring>(get_file_name()).c_str());
 			if (retVal == bufferSize - 1) {
 				delete[] buffer;
 				return internal_get_value(path, key, bufferSize * 10);
@@ -234,7 +240,7 @@ namespace settings {
 		virtual op_int get_real_int(settings_core::key_path_type key) {
 			op_string str = get_real_string(key);
 			if (str)
-				return op_int(strEx::s::stox<int>(*str));
+				return op_int(str::stox<int>(*str));
 			return op_int();
 		}
 		//////////////////////////////////////////////////////////////////////////

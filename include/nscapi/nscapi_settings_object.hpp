@@ -1,38 +1,39 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <map>
-#include <list>
-#include <string>
+#include <nscapi/nscapi_settings_proxy.hpp>
+#include <nscapi/nscapi_settings_helper.hpp>
+#include <nscapi/dll_defines.hpp>
 
-#include <boost/function.hpp>
+#include <settings/client/settings_client_interface.hpp>
+#include <nsclient/nsclient_exception.hpp>
+
 #include <boost/shared_ptr.hpp>
+#include <boost/function.hpp>
 #include <boost/foreach.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/make_shared.hpp>
 
-#include <nscapi/nscapi_core_wrapper.hpp>
-#include <nscapi/nscapi_settings_proxy.hpp>
-
-#include <settings/client/settings_client_interface.hpp>
-#include <nscapi/nscapi_settings_helper.hpp>
-
-#include <nscapi/dll_defines.hpp>
+#include <list>
+#include <string>
 
 namespace nscapi {
 	namespace settings_objects {
@@ -174,7 +175,7 @@ namespace nscapi {
 				return options.find(key) != options.end();
 			}
 			void set_property_int(std::string key, int value) {
-				translate(key, strEx::s::xtos(value));
+				translate(key, str::xtos(value));
 			}
 			void set_property_bool(std::string key, bool value) {
 				translate(key, value ? "true" : "false");
@@ -186,7 +187,7 @@ namespace nscapi {
 				options_map::const_iterator cit = options.find(key);
 				if (cit == options.end())
 					return value;
-				return strEx::s::stox<int>(cit->second);
+				return str::stox<int>(cit->second);
 			}
 			bool get_property_bool(std::string key, bool value) {
 				options_map::const_iterator cit = options.find(key);
@@ -267,6 +268,13 @@ namespace nscapi {
 				}
 				return ret;
 			}
+			std::list<std::string> get_alias_list() const {
+				std::list<std::string> ret;
+				BOOST_FOREACH(const typename object_map::value_type &t, objects) {
+					ret.push_back(t.first);
+				}
+				return ret;
+			}
 			bool has_objects() const {
 				return !objects.empty();
 			}
@@ -298,7 +306,7 @@ namespace nscapi {
 							object = factory->clone(parent, alias, path);
 							object->make_template(false);
 						} else {
-							throw nscapi_exception("Failed to create settings object for: " + alias);
+							throw nsclient::nsclient_exception("Failed to create settings object for: " + alias);
 						}
 					} else {
 						object = factory->create(alias, path);
@@ -320,6 +328,25 @@ namespace nscapi {
 
 			void materialize() {
 				ensure_default();
+			}
+
+			bool remove(boost::shared_ptr<nscapi::settings_proxy> proxy, std::string alias) {
+				proxy->remove_path(make_obj_path(path, alias));
+				proxy->remove_key(path, alias);
+				return remove(alias);
+			}
+			bool remove(const std::string alias) {
+				typename object_map::const_iterator cit = objects.find(alias);
+				if (cit != objects.end()) {
+					objects.erase(cit);
+					return true;
+				}
+				cit = templates.find(alias);
+				if (cit != templates.end()) {
+					templates.erase(cit);
+					return true;
+				}
+				return false;
 			}
 
 			object_instance find_object(const std::string alias) const {
@@ -378,25 +405,5 @@ namespace nscapi {
 				templates[alias] = object;
 			}
 		};
-
-		/*
-		struct NSCAPI_EXPORT template_object {
-			template_object() : is_template(false)  {}
-
-			std::string path;
-			std::string alias;
-			std::string value;
-			std::string parent;
-			bool is_template;
-
-			bool is_default() const {
-				return alias == "default";
-			}
-
-			void read_object(nscapi::settings_helper::path_extension &root_path);
-			void add_oneliner_hint(boost::shared_ptr<nscapi::settings_proxy> proxy, const bool oneliner, const bool is_sample);
-			std::string to_string() const;
-		};
-		*/
 	}
 }

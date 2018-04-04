@@ -1,23 +1,26 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
 #include <utils.h>
-#include <strEx.h>
+#include <str/xtos.hpp>
 
 #include <nsca/nsca_packet.hpp>
 
@@ -61,20 +64,20 @@ namespace nsca_handler {
 
 			root_path.add_key()
 
-				("payload length", sh::int_fun_key<int>(boost::bind(&parent::set_property_int, this, "payload length", _1), 512),
+				("payload length", sh::int_fun_key(boost::bind(&parent::set_property_int, this, "payload length", _1), 512),
 					"PAYLOAD LENGTH", "Length of payload to/from the NRPE agent. This is a hard specific value so you have to \"configure\" (read recompile) your NRPE agent to use the same value for it to work.", true)
 
-				("encryption", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "encryption", _1), "aes"),
+				("encryption", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "encryption", _1), "aes"),
 					"ENCRYPTION", std::string("Name of encryption algorithm to use.\nHas to be the same as your server i using or it wont work at all."
 						"This is also independent of SSL and generally used instead of SSL.\nAvailable encryption algorithms are:\n") + nscp::encryption::helpers::get_crypto_string("\n"))
 
-				("password", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "password", _1), ""),
+				("password", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "password", _1), ""),
 					"PASSWORD", "The password to use. Again has to be the same as the server or it wont work at all.")
 
-				("encoding", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "encoding", _1), ""),
+				("encoding", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "encoding", _1), ""),
 					"ENCODING", "", true)
 
-				("time offset", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "delay", _1), "0"),
+				("time offset", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "delay", _1), "0"),
 					"TIME OFFSET", "Time offset.", true)
 				;
 

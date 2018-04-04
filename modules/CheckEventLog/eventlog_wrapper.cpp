@@ -1,35 +1,42 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "eventlog_wrapper.hpp"
+
+#include <nsclient/nsclient_exception.hpp>
+#include <str/utils.hpp>
+
 #include "simple_registry.hpp"
 #include <nscapi/nscapi_helper_singleton.hpp>
 #include <nscapi/macros.hpp>
 
 std::string eventlog_wrapper::find_eventlog_name(const std::string name) {
 	try {
-		simple_registry::registry_key key(HKEY_LOCAL_MACHINE, _T("SYSTEM\\CurrentControlSet\\Services\\EventLog"));
+		simple_registry::registry_key key(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\EventLog");
 		BOOST_FOREACH(const std::wstring k, key.get_keys()) {
 			try {
-				simple_registry::registry_key sub_key(HKEY_LOCAL_MACHINE, _T("SYSTEM\\CurrentControlSet\\Services\\EventLog\\") + k);
-				std::wstring file = sub_key.get_string(_T("DisplayNameFile"));
-				int id = sub_key.get_int(_T("DisplayNameID"));
+				simple_registry::registry_key sub_key(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\" + k);
+				std::wstring file = sub_key.get_string(L"DisplayNameFile");
+				int id = sub_key.get_int(L"DisplayNameID");
 				std::string real_name = error::format::message::from_module(utf8::cvt<std::string>(file), id);
-				strEx::s::replace(real_name, "\n", "");
-				strEx::s::replace(real_name, "\r", "");
+				str::utils::replace(real_name, "\n", "");
+				str::utils::replace(real_name, "\r", "");
 				if (real_name == name)
 					return utf8::cvt<std::string>(k);
 			} catch (simple_registry::registry_exception &e) { e; }
@@ -58,7 +65,7 @@ eventlog_wrapper_new::~eventlog_wrapper_new() {
 void eventlog_wrapper_new::open() {
 	hContext = eventlog::EvtCreateRenderContext(0, NULL, eventlog::api::EvtRenderContextSystem);
 	if (!hContext)
-		throw nscp_exception("EvtCreateRenderContext failed: " + error::lookup::last_error());
+		throw nsclient::nsclient_exception("EvtCreateRenderContext failed: " + error::lookup::last_error());
 }
 	
 void eventlog_wrapper_new::reopen() {
@@ -111,10 +118,13 @@ eventlog_filter::filter::object_type eventlog_wrapper_new::read_record(HANDLE &h
 		DWORD status = GetLastError();
 		if (status == ERROR_NO_MORE_ITEMS || status == ERROR_TIMEOUT)
 			return eventlog_filter::filter::object_type();
-		else if (status != ERROR_SUCCESS)
+		else if (status != ERROR_SUCCESS) {
+			NSC_LOG_ERROR("Failed to read eventlog in real-time thread (resetting eventlog): " + error::lookup::last_error(status));
+			reset_event(handle);
 			return eventlog_filter::filter::object_type();
+		}
 	}
-	return eventlog_filter::filter::object_type(new eventlog_filter::new_filter_obj(ltime, name, hEvents[0], hContext, 512));
+	return eventlog_filter::filter::object_type(new eventlog_filter::new_filter_obj(ltime, name, hEvents[0], hContext, 0));
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -133,7 +143,7 @@ eventlog_wrapper_old::~eventlog_wrapper_old() {
 void eventlog_wrapper_old::open() {
 	hLog = OpenEventLog(NULL, utf8::cvt<std::wstring>(name).c_str());
 	if (hLog == INVALID_HANDLE_VALUE) {
-		throw nscp_exception("Failed to open eventlog: " + error::lookup::last_error());
+		throw nsclient::nsclient_exception("Failed to open eventlog: " + error::lookup::last_error());
 	}
 	seek_end();
 }
@@ -183,7 +193,7 @@ bool eventlog_wrapper_old::notify(HANDLE &handle) {
 }
 
 bool eventlog_wrapper_old::un_notify(HANDLE &handle) {
-	return CloseHandle(handle);
+	return CloseHandle(handle) == TRUE;
 }
 
 void eventlog_wrapper_old::reset_event(HANDLE &handle) {
@@ -241,7 +251,7 @@ eventlog_filter::filter::object_type eventlog_wrapper_old::read_record(HANDLE &h
 	if (pevlr == NULL)
 		return eventlog_filter::filter::object_type();
 	nextBufferPosition += pevlr->Length;
-	return eventlog_filter::filter::object_type(new eventlog_filter::old_filter_obj(ltime, get_name(), pevlr, 512));
+	return eventlog_filter::filter::object_type(new eventlog_filter::old_filter_obj(ltime, get_name(), pevlr, 0));
 }
 
 
@@ -266,7 +276,7 @@ DWORD eventlog_wrapper_old::do_record(DWORD dwRecordNumber, DWORD dwFlags) {
 			}
 		} else {
 			if (ERROR_HANDLE_EOF != status) {
-				NSC_LOG_ERROR_STD("Failed to read eventlog record(" + strEx::s::xtos(dwRecordNumber) + "): " + utf8::cvt<std::string>(error::lookup::last_error(status)));
+				NSC_LOG_ERROR_STD("Failed to read eventlog record(" + str::xtos(dwRecordNumber) + "): " + utf8::cvt<std::string>(error::lookup::last_error(status)));
 				return status;
 			}
 		}
@@ -278,7 +288,7 @@ DWORD eventlog_wrapper_old::do_record(DWORD dwRecordNumber, DWORD dwFlags) {
 //////////////////////////////////////////////////////////////////////////
 //
 event_source::event_source(const std::wstring &name) : hLog(NULL) {
-	open(_T(""), name);
+	open(L"", name);
 }
 event_source::~event_source() {
 	if (isOpen())

@@ -1,28 +1,32 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "realtime_data.hpp"
 
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
+
+#include <str/utils.hpp>
+
 #include <boost/foreach.hpp>
 #include <boost/filesystem.hpp>
 
-#include <strEx.h>
-
-#include <nscapi/nscapi_helper_singleton.hpp>
-#include <nscapi/macros.hpp>
 
 void runtime_data::touch(boost::posix_time::ptime now) {
 	BOOST_FOREACH(file_container &fc, files) {
@@ -34,10 +38,39 @@ void runtime_data::touch(boost::posix_time::ptime now) {
 	}
 }
 
+bool runtime_data::has_changed(const file_container &fc) const {
+	if (!boost::filesystem::exists(fc.file)) {
+		NSC_TRACE_ENABLED() {
+			NSC_TRACE_MSG("File was not found: " + fc.file.string());
+		}
+		return false;
+	}
+	if (check_time) {
+		std::time_t time = boost::filesystem::last_write_time(fc.file);
+		if (std::difftime(time, fc.time) != 0) {
+			NSC_TRACE_ENABLED() {
+				NSC_TRACE_MSG("File was changed (time): " + fc.file.string());
+			}
+			return true;
+		}
+	} else {
+		boost::uintmax_t sz = boost::filesystem::file_size(fc.file);
+		if (sz != fc.size) {
+			NSC_TRACE_ENABLED() {
+				NSC_TRACE_MSG("File was changed (size): " + fc.file.string());
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+
 bool runtime_data::has_changed(transient_data_type) const {
 	BOOST_FOREACH(const file_container &fc, files) {
-		if (boost::filesystem::exists(fc.file) &&  fc.size != boost::filesystem::file_size(fc.file))
+		if (has_changed(fc)) {
 			return true;
+		}
 	}
 	return false;
 }
@@ -62,17 +95,30 @@ modern_filter::match_result runtime_data::process_item(filter_type &filter, tran
 	modern_filter::match_result ret;
 	BOOST_FOREACH(file_container &c, files) {
 		boost::uintmax_t sz = boost::filesystem::file_size(c.file);
-		if (sz == c.size)
+		if (sz == 0) {
+			NSC_TRACE_ENABLED() {
+				NSC_TRACE_MSG("File was zero, no point in reading it: " + c.file.string());
+			}
 			continue;
+		}
+		if (!has_changed(c)) {
+			NSC_TRACE_ENABLED() {
+				NSC_TRACE_MSG("File was unchanged, no point in reading it: " + c.file.string());
+			}
+			continue;
+		}
+		c.time = boost::filesystem::last_write_time(c.file);
+		c.size = sz;
+
 		std::ifstream file(c.file.string().c_str());
 		if (file.is_open()) {
 			std::string line;
-			if (sz > c.size)
+			if (!read_from_start && sz > c.size)
 				file.seekg(c.size);
 			while (file.good()) {
 				std::getline(file, line, '\n');
 				if (!line.empty()) {
-					std::list<std::string> chunks = strEx::s::splitEx(line, utf8::cvt<std::string>(column_split));
+					std::list<std::string> chunks = str::utils::split_lst(line, utf8::cvt<std::string>(column_split));
 					boost::shared_ptr<logfile_filter::filter_obj> record(new logfile_filter::filter_obj(c.file.string(), line, chunks));
 					ret.append(filter.match(record));
 				}
@@ -85,13 +131,23 @@ modern_filter::match_result runtime_data::process_item(filter_type &filter, tran
 	return ret;
 }
 
+void runtime_data::set_read_from_start(bool read_from_start_) {
+	read_from_start = read_from_start_;
+	if (read_from_start) {
+		check_time = true;
+	}
+}
+void runtime_data::set_comparison(bool check_time_) {
+	check_time = check_time_;
+}
+
 void runtime_data::set_split(std::string line, std::string column) {
 	if (column.empty())
 		column_split = "\t";
 	else
 		column_split = column;
-	strEx::s::replace(column_split, "\\t", "\t");
-	strEx::s::replace(column_split, "\\n", "\n");
+	str::utils::replace(column_split, "\\t", "\t");
+	str::utils::replace(column_split, "\\n", "\n");
 	std::size_t len = column_split.size();
 	if (len == 0)
 		column_split = " ";
@@ -103,8 +159,8 @@ void runtime_data::set_split(std::string line, std::string column) {
 		line = "\n";
 	else
 		line_split = line;
-	strEx::s::replace(line_split, "\\t", "\t");
-	strEx::s::replace(line_split, "\\n", "\n");
+	str::utils::replace(line_split, "\\t", "\t");
+	str::utils::replace(line_split, "\\n", "\n");
 	len = line_split.size();
 	if (len == 0)
 		line_split = " ";

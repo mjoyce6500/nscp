@@ -1,22 +1,26 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <windows.h>
 #include <WinSvc.h>
-#include <error.hpp>
+#include <error/error.hpp>
+#include <nsclient/nsclient_exception.hpp>
 #include "EnumNtSrv.h"
 
 #include <buffer.hpp>
@@ -25,6 +29,10 @@
 #include <boost/unordered_map.hpp>
 
 #include <win_sysinfo/win_sysinfo.hpp>
+
+#include <utf8.hpp>
+#include <str/utils.hpp>
+#include <str/format.hpp>
 
 typedef boost::unordered_map<std::string, std::string> hash_map;
 hash_map smap;
@@ -268,7 +276,7 @@ typedef hlp::handle<SC_HANDLE, service_closer> service_handle;
 namespace services_helper {
 	DWORD parse_service_type(const std::string str) {
 		DWORD ret = 0;
-		BOOST_FOREACH(const std::string key, strEx::s::splitEx(str, std::string(","))) {
+		BOOST_FOREACH(const std::string key, str::utils::split_lst(str, std::string(","))) {
 			if (key == "driver" || key == "drv")
 				ret |= SERVICE_DRIVER;
 			else if (key == "file-system-driver" || key == "fs-drv")
@@ -282,13 +290,13 @@ namespace services_helper {
 			else if (key == "service-share-process" || key == "svc-shr")
 				ret |= SERVICE_WIN32_SHARE_PROCESS;
 			else
-				throw nscp_exception("Invalid service type specified: " + key);
+				throw nsclient::nsclient_exception("Invalid service type specified: " + key);
 		}
 		return ret;
 	}
 	DWORD parse_service_state(const std::string str) {
 		DWORD ret = 0;
-		BOOST_FOREACH(const std::string key, strEx::s::splitEx(str, std::string(","))) {
+		BOOST_FOREACH(const std::string key, str::utils::split_lst(str, std::string(","))) {
 			if (key == "active")
 				ret |= SERVICE_ACTIVE;
 			else if (key == "inactive")
@@ -296,7 +304,7 @@ namespace services_helper {
 			else if (key == "all")
 				ret |= SERVICE_STATE_ALL;
 			else
-				throw nscp_exception("Invalid service type specified: " + key);
+				throw nsclient::nsclient_exception("Invalid service type specified: " + key);
 		}
 		return ret;
 	}
@@ -306,11 +314,11 @@ namespace services_helper {
 		DWORD deErr = 0;
 
 		if (QueryServiceConfig(hService, NULL, 0, &bytesNeeded) || (deErr = GetLastError()) != ERROR_INSUFFICIENT_BUFFER)
-			throw nscp_exception("Failed to query service: " + service + ": " + error::lookup::last_error(deErr));
+			throw nsclient::nsclient_exception("Failed to query service: " + service + ": " + error::lookup::last_error(deErr));
 
 		hlp::buffer<BYTE, QUERY_SERVICE_CONFIG*> buf(bytesNeeded + 10);
 		if (!QueryServiceConfig(hService, buf.get(), bytesNeeded, &bytesNeeded))
-			throw nscp_exception("Failed to query service: " + service + ": " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to query service: " + service + ": " + error::lookup::last_error());
 		return buf;
 	}
 
@@ -319,11 +327,11 @@ namespace services_helper {
 		DWORD deErr = 0;
 
 		if (windows::winapi::QueryServiceStatusEx(hService, SC_STATUS_PROCESS_INFO, NULL, 0, &bytesNeeded) || (deErr = GetLastError()) != ERROR_INSUFFICIENT_BUFFER)
-			throw nscp_exception("Failed to query service: " + service + ": " + error::lookup::last_error(deErr));
+			throw nsclient::nsclient_exception("Failed to query service: " + service + ": " + error::lookup::last_error(deErr));
 
 		hlp::buffer<BYTE, SERVICE_STATUS_PROCESS*> buf(bytesNeeded + 10);
 		if (!windows::winapi::QueryServiceStatusEx(hService, SC_STATUS_PROCESS_INFO, buf, bytesNeeded, &bytesNeeded))
-			throw nscp_exception("Failed to query service: " + service + ": " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to query service: " + service + ": " + error::lookup::last_error());
 		return buf;
 	}
 
@@ -335,7 +343,7 @@ namespace services_helper {
 		hlp::buffer<BYTE> buffer(bytesNeeded + 10);
 
 		if (!QueryServiceConfig2W(hService, SERVICE_CONFIG_TRIGGER_INFO, buffer.get(), bytesNeeded, &bytesNeeded))
-			throw nscp_exception("Failed to open service: " + info.name);
+			throw nsclient::nsclient_exception("Failed to open service: " + info.name);
 
 		info.triggers = buffer.get_t<SERVICE_TRIGGER_INFO*>()->cTriggers;
 	}
@@ -354,7 +362,7 @@ namespace services_helper {
 
 		service_handle sc = OpenSCManager(comp.empty() ? NULL : comp.c_str(), NULL, SC_MANAGER_ENUMERATE_SERVICE);
 		if (!sc)
-			throw nscp_exception("Failed to open service manager: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to open service manager: " + error::lookup::last_error());
 
 		DWORD bytesNeeded = 0;
 		DWORD count = 0;
@@ -363,14 +371,14 @@ namespace services_helper {
 		if (bRet != 0) {
 			int err = GetLastError();
 			if (err != ERROR_MORE_DATA) {
-				throw nscp_exception("Failed to enumerate service status: " + error::format::from_system(err));
+				throw nsclient::nsclient_exception("Failed to enumerate service status: " + error::format::from_system(err));
 			}
 		}
 
 		hlp::buffer<BYTE, ENUM_SERVICE_STATUS_PROCESS*> buf(bytesNeeded + 10);
 		bRet = windows::winapi::EnumServicesStatusEx(sc, SC_ENUM_PROCESS_INFO, dwServiceType, dwServiceState, buf, bytesNeeded, &bytesNeeded, &count, &handle, NULL);
 		if (!bRet)
-			throw nscp_exception("Failed to enumerate service: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to enumerate service: " + error::lookup::last_error());
 		ENUM_SERVICE_STATUS_PROCESS *data = buf.get();
 		for (DWORD i = 0; i < count; ++i) {
 			service_info info(utf8::cvt<std::string>(data[i].lpServiceName), utf8::cvt<std::string>(data[i].lpDisplayName));
@@ -380,7 +388,7 @@ namespace services_helper {
 
 			service_handle hService = OpenService(sc, data[i].lpServiceName, SERVICE_QUERY_CONFIG);
 			if (!hService)
-				throw nscp_exception("Failed to open service: " + info.name);
+				throw nsclient::nsclient_exception("Failed to open service: " + info.name);
 
 			hlp::buffer<BYTE, QUERY_SERVICE_CONFIG*> qscData = queryServiceConfig(hService, info.name);
 			info.start_type = qscData.get()->dwStartType;
@@ -399,7 +407,7 @@ namespace services_helper {
 
 		service_handle sc = OpenSCManager(comp.empty() ? NULL : comp.c_str(), NULL, SC_MANAGER_ENUMERATE_SERVICE);
 		if (!sc)
-			throw nscp_exception("Failed to open service manager: " + error::lookup::last_error());
+			throw nsclient::nsclient_exception("Failed to open service manager: " + error::lookup::last_error());
 
 		service_handle hService = OpenService(sc, utf8::cvt<std::wstring>(service).c_str(), SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS);
 		if (!hService) {
@@ -408,13 +416,13 @@ namespace services_helper {
 				hlp::buffer<wchar_t> buf(2048);
 				DWORD size = buf.size();
 				if (!GetServiceKeyName(sc, utf8::cvt<std::wstring>(service).c_str(), buf.get(), &size)) {
-					throw nscp_exception("Failed to open service " + service + ": " + error::lookup::last_error(error));
+					throw nsclient::nsclient_exception("Failed to open service " + service + ": " + error::lookup::last_error(error));
 				}
 				hService = OpenService(sc, buf.get(), SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS);
 				if (!hService)
-					throw nscp_exception("Failed to open service " + service + ": " + error::lookup::last_error(error));
+					throw nsclient::nsclient_exception("Failed to open service " + service + ": " + error::lookup::last_error(error));
 			} else
-				throw nscp_exception("Failed to open service " + service + ": " + error::lookup::last_error(error));
+				throw nsclient::nsclient_exception("Failed to open service " + service + ": " + error::lookup::last_error(error));
 		}
 
 		hlp::buffer<BYTE, SERVICE_STATUS_PROCESS*> ssp = queryServiceStatusEx(hService, service);
@@ -427,15 +435,16 @@ namespace services_helper {
 		DWORD bytesNeeded2 = 0;
 		DWORD deErr = 0;
 		if (QueryServiceConfig(hService, NULL, 0, &bytesNeeded2) || (deErr = GetLastError()) != ERROR_INSUFFICIENT_BUFFER)
-			throw nscp_exception("Failed to open service " + info.name + ": " + error::lookup::last_error(deErr));
+			throw nsclient::nsclient_exception("Failed to open service " + info.name + ": " + error::lookup::last_error(deErr));
 		hlp::buffer<BYTE> buf2(bytesNeeded2 + 10);
 
 		if (!QueryServiceConfig(hService, reinterpret_cast<QUERY_SERVICE_CONFIG*>(buf2.get()), bytesNeeded2, &bytesNeeded2))
-			throw nscp_exception("Failed to open service: " + info.name);
+			throw nsclient::nsclient_exception("Failed to open service: " + info.name);
 		QUERY_SERVICE_CONFIG *data2 = reinterpret_cast<QUERY_SERVICE_CONFIG*>(buf2.get());
 		info.start_type = data2->dwStartType;
 		info.binary_path = utf8::cvt<std::string>(data2->lpBinaryPathName);
 		info.error_control = data2->dwErrorControl;
+		info.displayname = utf8::cvt<std::string>(data2->lpDisplayName);
 
 		fetch_delayed(hService, info);
 		fetch_triggers(hService, info);
@@ -528,17 +537,17 @@ namespace services_helper {
 	std::string service_info::get_type() const {
 		std::string str = "";
 		if (type&SERVICE_FILE_SYSTEM_DRIVER)
-			strEx::append_list(str, "system-driver");
+			str::format::append_list(str, "system-driver");
 		if (type&SERVICE_KERNEL_DRIVER)
-			strEx::append_list(str, "kernel-driver");
+			str::format::append_list(str, "kernel-driver");
 		if (type&SERVICE_WIN32_OWN_PROCESS)
-			strEx::append_list(str, "service-own-process");
+			str::format::append_list(str, "service-own-process");
 		if (type&SERVICE_WIN32_SHARE_PROCESS)
-			strEx::append_list(str, "service-shared-process");
+			str::format::append_list(str, "service-shared-process");
 		if (type&SERVICE_WIN32)
-			strEx::append_list(str, "service");
+			str::format::append_list(str, "service");
 		if (type&SERVICE_INTERACTIVE_PROCESS)
-			strEx::append_list(str, "interactive");
+			str::format::append_list(str, "interactive");
 		return str;
 	}
 }

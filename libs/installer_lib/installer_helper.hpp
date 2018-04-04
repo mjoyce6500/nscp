@@ -1,10 +1,15 @@
 #pragma once
 
-#include <windows.h>
-#include <msi.h>
-#include <error.hpp>
+#include <error/error.hpp>
 #include <char_buffer.hpp>
-#include <wstring.hpp>
+#include <str/wstring.hpp>
+#include <utf8.hpp>
+
+#include <msi.h>
+#include <MsiQuery.h>
+#include <windows.h>
+
+#include <vector>
 
 class installer_exception {
 	std::wstring error_;
@@ -14,8 +19,8 @@ public:
 	std::wstring what() const { return error_; }
 };
 
-#define MY_EMPTY _T("$EMPTY$")
-#define KEY_DEF _T("_DEFAULT")
+#define MY_EMPTY L"$EMPTY$"
+#define KEY_DEF L"_DEFAULT"
 class msi_helper {
 	MSIHANDLE hInstall_;
 	std::wstring action_;
@@ -24,7 +29,7 @@ class msi_helper {
 	PMSIHANDLE hDatabase;
 public:
 	msi_helper(MSIHANDLE hInstall, std::wstring action) : hInstall_(hInstall), hProgressPos(NULL), hActionRec(NULL), action_(action) {
-		logMessage(_T("installer_lib::") + action);
+		logMessage(L"installer_lib::" + action);
 	}
 	~msi_helper() {
 		MsiCloseHandle(hInstall_);
@@ -39,27 +44,27 @@ public:
 		wchar_t tmpBuf[MAX_PATH];
 		DWORD len = 0;
 		if (MsiGetTargetPath(hInstall_, path.c_str(), tmpBuf, &len) != ERROR_MORE_DATA)
-			throw installer_exception(_T("Failed to get size for target path '") + path + _T("': ") + last_werror());
+			throw installer_exception(L"Failed to get size for target path '" + path + L"': " + last_werror());
 		len++;
 		hlp::tchar_buffer buffer(len);
 		if (MsiGetTargetPath(hInstall_, path.c_str(), buffer, &len) != ERROR_SUCCESS) {
-			throw installer_exception(_T("Failed to get target path '") + path + _T("': ") + last_werror());
+			throw installer_exception(L"Failed to get target path '" + path + L"': " + last_werror());
 		}
 		std::wstring value = buffer;
 		return value;
 	}
 
-	inline std::wstring trim_right(const std::wstring &source, const std::wstring& t = _T(" ")) {
+	inline std::wstring trim_right(const std::wstring &source, const std::wstring& t = L" ") {
 		std::wstring str = source;
 		return str.erase(str.find_last_not_of(t) + 1);
 	}
 
-	inline std::wstring trim_left(const std::wstring& source, const std::wstring& t = _T(" ")) {
+	inline std::wstring trim_left(const std::wstring& source, const std::wstring& t = L" ") {
 		std::wstring str = source;
 		return str.erase(0, source.find_first_not_of(t));
 	}
 
-	inline std::wstring trim(const std::wstring& source, const std::wstring& t = _T(" ")) {
+	inline std::wstring trim(const std::wstring& source, const std::wstring& t = L" ") {
 		std::wstring str = source;
 		return trim_left(trim_right(str, t), t);
 	}
@@ -72,11 +77,11 @@ public:
 		wchar_t tmpBuf[MAX_PATH];
 		DWORD len = 0;
 		if (MsiGetProperty(hInstall_, path.c_str(), tmpBuf, &len) != ERROR_MORE_DATA)
-			throw installer_exception(_T("Failed to get size for property '") + path + _T("': ") + last_werror());
+			throw installer_exception(L"Failed to get size for property '" + path + L"': " + last_werror());
 		len++;
 		hlp::tchar_buffer buffer(len);
 		if (MsiGetProperty(hInstall_, path.c_str(), buffer, &len) != ERROR_SUCCESS) {
-			throw installer_exception(_T("Failed to get property '") + path + _T("': ") + last_werror());
+			throw installer_exception(L"Failed to get property '" + path + L"': " + last_werror());
 		}
 		std::wstring value = buffer;
 		return value;
@@ -86,11 +91,11 @@ public:
 		DWORD len = 0;
 		UINT er;
 		if ((er = MsiGetProperty(hInstall_, path.c_str(), emptyString, &len)) != ERROR_MORE_DATA)
-			throw installer_exception(_T("Failed to get size for property '") + path + _T("': ") + last_werror(er));
+			throw installer_exception(L"Failed to get size for property '" + path + L"': " + last_werror(er));
 		len += 2;
 		hlp::tchar_buffer buffer(len);
 		if ((er = MsiGetProperty(hInstall_, path.c_str(), buffer, &len)) != ERROR_SUCCESS) {
-			throw installer_exception(_T("Failed to get property '") + path + _T("': ") + last_werror(er));
+			throw installer_exception(L"Failed to get property '" + path + L"': " + last_werror(er));
 		}
 		return buffer;
 	}
@@ -102,51 +107,55 @@ public:
 	}
 	void setPropertyIfEmpty(std::wstring key, std::wstring val) {
 		std::wstring old = getPropery(key);
-		logMessage(_T("Setting ") + key + _T(" to ") + val + _T(" if empty"));
 		if (old.empty()) {
+			logMessage(L"Setting (empty) " + key + L" to " + val + L" if empty");
 			setProperty(key, val);
+		} else {
+			logMessage(L"Not setting (not empty) " + key + L" to " + val + L" if empty");
 		}
 	}
 	void setPropertyAndDefault(std::wstring key, std::wstring value) {
-		logMessage(_T("Setting ") + key + _T("=") + value);
-		logMessage(_T("Setting ") + key + KEY_DEF + _T("=") + value);
+		logMessage(L"Setting " + key + L"=" + value);
+		logMessage(L"Setting " + key + KEY_DEF + L"=" + value);
+		MsiSetProperty(hInstall_, key.c_str(), L"");
 		MsiSetProperty(hInstall_, key.c_str(), value.c_str());
+		MsiSetProperty(hInstall_, (key + KEY_DEF).c_str(), L"");
 		MsiSetProperty(hInstall_, (key + KEY_DEF).c_str(), value.c_str());
 	}
 	void setPropertyAndDefault(std::wstring key, std::wstring value, std::wstring old_value) {
-		logMessage(_T("Setting ") + key + _T("=") + value);
-		logMessage(_T("Setting ") + key + KEY_DEF + _T("=") + old_value);
+		logMessage(L"Setting " + key + L"=" + value);
+		logMessage(L"Setting " + key + KEY_DEF + L"=" + old_value);
 		MsiSetProperty(hInstall_, key.c_str(), value.c_str());
 		MsiSetProperty(hInstall_, (key + KEY_DEF).c_str(), old_value.c_str());
 	}
 	void setPropertyAndDefaultBool(std::wstring key, bool value) {
-		std::wstring v = value ? L"1" : L"0";
+		std::wstring v = value ? L"1" : L"";
 		setPropertyAndDefault(key, v);
 	}
 	void setProperty(std::wstring key, std::wstring value) {
 		std::wstring old = getPropery(key);
-		logMessage(_T("Setting ") + key + _T("=") + value + _T(" previous value was: ") + old);
+		logMessage(L"Setting " + key + L"=" + value + L" previous value was: " + old);
 		MsiSetProperty(hInstall_, key.c_str(), value.c_str());
 	}
 	void applyProperty(std::wstring key, std::wstring value_key) {
 		std::wstring current_value = getPropery(key);
 		std::wstring applied_value = getPropery(value_key);
-		logMessage(_T("Applying value from ") + value_key + _T(" to ") + key);
+		logMessage(L"Applying value from " + value_key + L" to " + key);
 		if (!applied_value.empty()) {
-			logMessage(_T("  + ") + key + _T(" goes from ") + current_value + _T(" to ") + applied_value);
+			logMessage(L"  + " + key + L" goes from " + current_value + L" to " + applied_value);
 			setProperty(key, applied_value);
 		} else {
-			logMessage(_T("  + ") + key + _T(" unchanged as overriden value was empty: keeping ") + current_value + _T(" over ") + applied_value);
+			logMessage(L"  + " + key + L" unchanged as overriden value was empty: keeping " + current_value + L" over " + applied_value);
 		}
 	}
 
 	void dumpReason(std::wstring desc) {
-		logMessage(_T(" : NSCP Dumping properties: ") + desc);
+		logMessage(L" : NSCP Dumping properties: " + desc);
 
 	}
 	void dumpProperty(std::wstring key) {
 		std::wstring value = getPropery(key);
-		logMessage(_T(" : +++ ") + key + _T("=") + value);
+		logMessage(L" : +++ " + key + L"=" + value);
 	}
 
 
@@ -194,7 +203,7 @@ public:
 	}
 
 	std::wstring getTempPath() {
-		return getPropery(_T("TempFolder"));
+		return getPropery(L"TempFolder");
 	}
 
 	MSIHANDLE getActiveDatabase() {
@@ -203,7 +212,7 @@ public:
 		return hDatabase;
 	}
 
-	inline boolean isNull(MSIHANDLE h) {
+	inline bool isNull(MSIHANDLE h) {
 		return h == NULL;
 	}
 
@@ -233,15 +242,15 @@ public:
 	MSIHANDLE open_execute_view(__in_z LPCWSTR wzSql) {
 		MSIHANDLE phView;
 		if (!wzSql || !*wzSql)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 
 		UINT er = ::MsiDatabaseOpenViewW(getActiveDatabase(), wzSql, &phView);
 		if (er != ERROR_SUCCESS)
-			throw installer_exception(_T("failed to open view on database: ") + last_werror(er));
+			throw installer_exception(L"failed to open view on database: " + last_werror(er));
 		er = ::MsiViewExecute(phView, NULL);
 		if (er != ERROR_SUCCESS) {
 			MsiCloseHandle(phView);
-			throw installer_exception(_T("failed to open view on database: ") + last_werror(er));
+			throw installer_exception(L"failed to open view on database: " + last_werror(er));
 		}
 		return phView;
 	}
@@ -252,13 +261,13 @@ public:
 	MSIHANDLE fetch_record(__in MSIHANDLE hView) {
 		MSIHANDLE phRec;
 		if (!hView)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 
 		UINT er = ::MsiViewFetch(hView, &phRec);
 		if (er == ERROR_NO_MORE_ITEMS)
 			return NULL;
 		if (er != ERROR_SUCCESS)
-			throw installer_exception(_T("failed to return rows from database: ") + last_werror(er));
+			throw installer_exception(L"failed to return rows from database: " + last_werror(er));
 		return phRec;
 	}
 
@@ -267,7 +276,7 @@ public:
 	********************************************************************/
 	std::wstring get_record_string(__in MSIHANDLE hRec, __in UINT uiField) {
 		if (!hRec)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 
 		UINT er;
 		DWORD_PTR cch = 0;
@@ -275,14 +284,14 @@ public:
 		WCHAR szEmpty[1] = L"";
 		er = ::MsiRecordGetStringW(hRec, uiField, szEmpty, (DWORD*)&cch);
 		if (ERROR_MORE_DATA != er && ERROR_SUCCESS != er) {
-			throw installer_exception(_T("get_record_string:: Failed to get length of string: ") + last_werror(er));
+			throw installer_exception(L"get_record_string:: Failed to get length of string: " + last_werror(er));
 		}
 		hlp::tchar_buffer buffer(++cch);
 
 		er = ::MsiRecordGetStringW(hRec, uiField, buffer, (DWORD*)&cch);
 		if (er != ERROR_SUCCESS)
 			if (ERROR_MORE_DATA == er) {
-				throw installer_exception(_T("get_record_string:: Failed to get length of string: ") + last_werror(er));
+				throw installer_exception(L"get_record_string:: Failed to get length of string: " + last_werror(er));
 			}
 		std::wstring string = buffer;
 		return string;
@@ -293,7 +302,7 @@ WcaGetRecordString() - gets a string field out of a record
 ********************************************************************/
 	std::wstring get_record_blob(__in MSIHANDLE hRec, __in UINT uiField) {
 		if (!hRec)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 
 		UINT er;
 
@@ -303,7 +312,7 @@ WcaGetRecordString() - gets a string field out of a record
 		er = ::MsiRecordReadStream(hRec, uiField, buffer, (DWORD*)&size);
 		if (er != ERROR_SUCCESS)
 			if (ERROR_MORE_DATA == er) {
-				throw installer_exception(_T("get_record_string:: Failed to get length of string: ") + last_werror(er));
+				throw installer_exception(L"get_record_string:: Failed to get length of string: " + last_werror(er));
 			}
 		std::string string = buffer;
 		return utf8::cvt<std::wstring>(string);
@@ -347,7 +356,7 @@ WcaGetRecordString() - gets a string field out of a record
 	********************************************************************/
 	int get_record_integer(MSIHANDLE hRec, UINT uiField) {
 		if (!hRec)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 		return ::MsiRecordGetInteger(hRec, uiField);
 	}
 
@@ -356,11 +365,11 @@ WcaGetRecordString() - gets a string field out of a record
 	********************************************************************/
 	void set_record_string(__in MSIHANDLE hRec, __in UINT uiField, __in_z LPCWSTR wzData) {
 		if (!hRec || !wzData)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 
 		UINT er = ::MsiRecordSetStringW(hRec, uiField, wzData);
 		if (er != ERROR_SUCCESS)
-			throw installer_exception(_T("Failed to set filed as string!"));
+			throw installer_exception(L"Failed to set filed as string!");
 	}
 
 	/********************************************************************
@@ -368,7 +377,7 @@ WcaGetRecordString() - gets a string field out of a record
 	********************************************************************/
 	std::wstring get_record_formatted_string(__in MSIHANDLE hRec, __in UINT uiField) {
 		if (!hRec)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 
 		UINT er;
 
@@ -376,7 +385,7 @@ WcaGetRecordString() - gets a string field out of a record
 		hlp::tchar_buffer tmp = get_record_string(hRec, uiField);
 		std::wstring t = tmp;
 		if (t.length() == 0)
-			return _T("");
+			return L" ";
 
 		// hide the nulls '[~]' so we can get them back after formatting
 		//TODO: _hide_nulls(tmp);
@@ -384,22 +393,22 @@ WcaGetRecordString() - gets a string field out of a record
 		// set up the format record
 		PMSIHANDLE hRecFormat = ::MsiCreateRecord(1);
 		if (hRecFormat == NULL)
-			throw installer_exception(_T("Record was NULL!"));
+			throw installer_exception(L"Record was NULL!");
 		set_record_string(hRecFormat, 0, tmp);
 
 		WCHAR szEmpty[1] = L"";
 		DWORD_PTR cch = 0;
 		er = ::MsiFormatRecordW(hInstall_, hRecFormat, szEmpty, (DWORD*)&cch);
 		if (ERROR_MORE_DATA != er && ERROR_SUCCESS != er) {
-			throw installer_exception(_T("get_record_formatted_string:: Failed to get length of string: ") + last_werror(er));
+			throw installer_exception(L"get_record_formatted_string:: Failed to get length of string: " + last_werror(er));
 		}
 		hlp::tchar_buffer buffer(++cch);
 
 		er = ::MsiFormatRecordW(hInstall_, hRecFormat, buffer, (DWORD*)&cch);
 		if (er != ERROR_SUCCESS) {
-			throw installer_exception(_T("get_record_formatted_string:: Failed to format string: ") + last_werror(er));
+			throw installer_exception(L"get_record_formatted_string:: Failed to format string: " + last_werror(er));
 		}
-		//logMessage(_T("FMT Record: '") + std::wstring(buffer) + _T("'"));
+		//logMessage(L"FMT Record: '" + std::wstring(buffer) + L"'");
 		// put the nulls back
 		//TODO: _reveal_nulls(buffer);
 		std::wstring str = buffer;
@@ -411,7 +420,7 @@ WcaGetRecordString() - gets a string field out of a record
 	********************************************************************/
 	int get_record_formatted_integer(MSIHANDLE hRec, UINT uiField) {
 		if (!hRec)
-			throw installer_exception(_T("Invalid arguments!"));
+			throw installer_exception(L"Invalid arguments!");
 		std::wstring str = get_record_formatted_string(hRec, uiField);
 		if (str.length() > 0)
 			return strEx::stox<int>(str);
@@ -435,7 +444,7 @@ WcaGetRecordString() - gets a string field out of a record
 		INSTALLSTATE isAction = INSTALLSTATE_UNKNOWN;
 		UINT er = ::MsiGetComponentStateW(hInstall_, wzComponentId.c_str(), &isInstalled, &isAction);
 		if (ERROR_SUCCESS != er) {
-			logMessage(_T("State for : ") + wzComponentId + _T(" was unknown due to: ") + last_werror(er));
+			logMessage(L"State for : " + wzComponentId + L" was unknown due to: " + last_werror(er));
 			return WCA_TODO_UNKNOWN;
 		}
 
@@ -446,7 +455,7 @@ WcaGetRecordString() - gets a string field out of a record
 		} else if (WcaIsInstalling(isInstalled, isAction)) {
 			return WCA_TODO_INSTALL;
 		} else {
-			logMessage(_T("State for : ") + wzComponentId + _T(" was unknown due to; isInstalled: ") + strEx::xtos(isInstalled) + _T(", isAction: ") + strEx::xtos(isAction));
+			logMessage(L"State for : " + wzComponentId + L" was unknown due to; isInstalled: " + strEx::xtos(isInstalled) + L", isAction: " + strEx::xtos(isAction));
 			return WCA_TODO_UNKNOWN;
 		}
 	}
@@ -455,7 +464,7 @@ WcaGetRecordString() - gets a string field out of a record
 		INSTALLSTATE isAction = INSTALLSTATE_UNKNOWN;
 		UINT er = ::MsiGetComponentStateW(hInstall_, wzComponentId.c_str(), &isInstalled, &isAction);
 		if (ERROR_SUCCESS != er) {
-			logMessage(_T("State for : ") + wzComponentId + _T(" was unknown due to: ") + last_werror(er));
+			logMessage(L"State for : " + wzComponentId + L" was unknown due to: " + last_werror(er));
 			return WCA_TODO_UNKNOWN;
 		}
 		return (INSTALLSTATE_LOCAL == isInstalled || INSTALLSTATE_SOURCE == isInstalled);
@@ -463,14 +472,14 @@ WcaGetRecordString() - gets a string field out of a record
 	/********************************************************************
 	WcaIsInstalling() - determines if a pair of installstates means install
 	********************************************************************/
-	boolean WcaIsInstalling(INSTALLSTATE isInstalled, INSTALLSTATE isAction) {
+	bool WcaIsInstalling(INSTALLSTATE isInstalled, INSTALLSTATE isAction) {
 		return (INSTALLSTATE_LOCAL == isAction || INSTALLSTATE_SOURCE == isAction || (INSTALLSTATE_DEFAULT == isAction && (INSTALLSTATE_LOCAL == isInstalled || INSTALLSTATE_SOURCE == isInstalled)));
 	}
 
 	/********************************************************************
 	WcaIsReInstalling() - determines if a pair of installstates means reinstall
 	********************************************************************/
-	boolean WcaIsReInstalling(INSTALLSTATE isInstalled, INSTALLSTATE isAction) {
+	bool WcaIsReInstalling(INSTALLSTATE isInstalled, INSTALLSTATE isAction) {
 		return ((INSTALLSTATE_LOCAL == isAction || INSTALLSTATE_SOURCE == isAction || INSTALLSTATE_DEFAULT == isAction) && (INSTALLSTATE_LOCAL == isInstalled || INSTALLSTATE_SOURCE == isInstalled));
 	}
 
@@ -520,12 +529,12 @@ WcaGetRecordString() - gets a string field out of a record
 		}
 		~custom_action_data_r() {}
 
-		boolean has_more() {
+		bool has_more() {
 			return position_ < list_.size();
 		}
 		std::wstring get_next_string() {
 			if (!has_more())
-				return _T("");
+				return L" ";
 			return list_[position_++];
 		}
 		unsigned int get_next_int() {
@@ -543,7 +552,7 @@ WcaGetRecordString() - gets a string field out of a record
 		std::wstring to_string() {
 			std::wstring str;
 			for (list_t::const_iterator cit = list_.begin(); cit != list_.end(); ++cit) {
-				str += (*cit) + _T("|");
+				str += (*cit) + L"|";
 			}
 			return str;
 		}
@@ -584,7 +593,7 @@ WcaGetRecordString() - gets a string field out of a record
 		std::wstring to_string() const {
 			return buf_; //return std::wstring(data_);
 		}
-		boolean has_data(const int size = 0) const {
+		bool has_data(const int size = 0) const {
 			return used_size() > size;
 		}
 		operator const wchar_t* () const {
@@ -605,7 +614,7 @@ WcaGetRecordString() - gets a string field out of a record
 		if (wzCustomActionData && *wzCustomActionData) {
 			er = ::MsiSetPropertyW(hInstall_, wzAction, wzCustomActionData);
 			if (er != ERROR_SUCCESS)
-				throw installer_exception(_T("Failed to set CustomActionData for deferred action") + last_werror(er));
+				throw installer_exception(L"Failed to set CustomActionData for deferred action" + last_werror(er));
 		}
 		/*
 				if (0 < uiCost) {
@@ -617,7 +626,7 @@ WcaGetRecordString() - gets a string field out of a record
 		if (ERROR_INSTALL_USEREXIT == er)
 			return er;
 		else if (er != ERROR_SUCCESS)
-			throw installer_exception(_T("Failed MsiDoAction on deferred action") + last_werror(er));
+			throw installer_exception(L"Failed MsiDoAction on deferred action" + last_werror(er));
 		return S_OK;
 	}
 	/*

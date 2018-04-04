@@ -1,35 +1,43 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <string>
-#include <map>
+#include <settings/settings_core.hpp>
+#include <settings/settings_interface_impl.hpp>
+
+#include <error/error.hpp>
+
+#include <str/xtos.hpp>
+#include <str/utils.hpp>
+
+#include <file_helpers.hpp>
+
+#include <simpleini/simpleini.h>
+
 
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
 
-#include <settings/settings_core.hpp>
-#include <settings/settings_interface_impl.hpp>
+#include <string>
+#include <map>
 
-#include <error.hpp>
-
-//#define SI_CONVERT_ICU
-//#define SI_CONVERT_GENERIC
-#include <simpleini/simpleini.h>
 
 namespace settings {
 	class INISettings : public settings::settings_interface_impl {
@@ -69,7 +77,7 @@ namespace settings {
 			op_string str = get_real_string(key);
 			if (str) {
 				try {
-					return strEx::s::stox<int>(*str);
+					return str::stox<int>(*str);
 				} catch (const std::exception &e) {
 					return op_int();
 				}
@@ -106,6 +114,26 @@ namespace settings {
 			return ini.GetSectionSize(utf8::cvt<std::wstring>(path).c_str()) > 0;
 		}
 
+		std::string render_comment(const settings_core::key_description &desc) {
+			std::string comment = "; ";
+			if (!desc.title.empty())
+				comment += desc.title + " - ";
+			if (!desc.description.empty())
+				comment += desc.description;
+			str::utils::replace(comment, "\n", " ");
+			return comment;
+		}
+
+		std::string render_comment(const settings_core::path_description &desc) {
+			std::string comment = "; ";
+			if (!desc.title.empty())
+				comment += desc.title + " - ";
+			if (!desc.description.empty())
+				comment += desc.description;
+			str::utils::replace(comment, "\n", " ");
+			return comment;
+		}
+
 		//////////////////////////////////////////////////////////////////////////
 		/// Write a value to the resulting context.
 		///
@@ -118,13 +146,7 @@ namespace settings {
 				return;
 			try {
 				const settings_core::key_description desc = get_core()->get_registred_key(key.first, key.second);
-				std::string comment = "; ";
-				if (!desc.title.empty())
-					comment += desc.title + " - ";
-				if (!desc.description.empty())
-					comment += desc.description;
-				strEx::s::replace(comment, "\n", " ");
-
+				std::string comment = render_comment(desc);
 				ini.Delete(utf8::cvt<std::wstring>(key.first).c_str(), utf8::cvt<std::wstring>(key.second).c_str());
 				ini.SetValue(utf8::cvt<std::wstring>(key.first).c_str(), utf8::cvt<std::wstring>(key.second).c_str(), utf8::cvt<std::wstring>(value.get_string()).c_str(), utf8::cvt<std::wstring>(comment).c_str());
 			} catch (settings_exception e) {
@@ -137,9 +159,8 @@ namespace settings {
 		virtual void set_real_path(std::string path) {
 			try {
 				const settings_core::path_description desc = get_core()->get_registred_path(path);
-				if (!desc.description.empty()) {
-					std::string comment = "; " + desc.description;
-					boost::replace_all(comment, "\n", "\n;");
+				std::string comment = render_comment(desc);
+				if (!comment.empty()) {
 					ini.SetValue(utf8::cvt<std::wstring>(path).c_str(), NULL, NULL, utf8::cvt<std::wstring>(comment).c_str());
 				}
 			} catch (settings_exception e) {
@@ -184,10 +205,14 @@ namespace settings {
 					std::string key = utf8::cvt<std::string>(e.pItem);
 					if (key.length() > path_len + 1 && key.substr(0, path_len) == path) {
 						std::string::size_type pos = key.find('/', path_len + 1);
-						if (pos == std::string::npos)
+						if (pos == std::string::npos && path_len > 1)
 							key = key.substr(path_len + 1);
-						else
+						else if (pos == std::string::npos)
+							key = key.substr(path_len);
+						else if (path_len > 1)
 							key = key.substr(path_len + 1, pos - path_len - 1);
+						else
+							key = key.substr(path_len, pos - path_len);
 						list.push_back(key);
 					}
 				}
@@ -216,6 +241,8 @@ namespace settings {
 		/// @author mickem
 		virtual void save() {
 			settings_interface_impl::save();
+
+
 			SI_Error rc = ini.SaveFile(get_file_name().string().c_str());
 			if (rc < 0)
 				throw_SI_error(rc, "Failed to save file");
@@ -246,6 +273,8 @@ namespace settings {
 
 			return ret;
 		}
+
+
 		virtual void real_clear_cache() {
 			is_loaded_ = false;
 			load_data();
@@ -258,7 +287,7 @@ namespace settings {
 				boost::filesystem::directory_iterator it(get_file_name()), eod;
 
 				BOOST_FOREACH(boost::filesystem::path const &p, std::make_pair(it, eod)) {
-					add_child_unsafe(p.filename().string(), "ini:///" + p.string());
+					add_child_unsafe(file_helpers::meta::get_filename(p), "ini:///" + p.string());
 				}
 			}
 			if (!file_exists()) {

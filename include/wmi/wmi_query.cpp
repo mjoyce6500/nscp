@@ -1,30 +1,34 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <wmi/wmi_query.hpp>
 
-#include <map>
+#include <error/error_com.hpp>
 
 #include <boost/optional.hpp>
+#include <boost/foreach.hpp>
+
+#include <map>
 
 #include <objidl.h>
 #include <Wbemidl.h>
 #include <WMIUtils.h>
-
-#include <error_com.hpp>
 
 namespace wmi_impl {
 	struct identidy_container {
@@ -69,7 +73,7 @@ namespace wmi_impl {
 	identidy_container get_identity(const std::wstring &username, const std::wstring &password) {
 		std::wstring::size_type pos = username.find('\\');
 		if (pos == std::string::npos) {
-			return identidy_container(_T(""), username, password);
+			return identidy_container(L" ", username, password);
 		}
 		return identidy_container(username.substr(0, pos), username.substr(pos + 1), password);
 	}
@@ -106,6 +110,28 @@ namespace wmi_impl {
 		return service;
 	}
 
+	template<class TRawType>
+	std::string get_array(SAFEARRAY *parray) {
+		long begin, end;
+		CComSafeArray<TRawType> arr(parray);
+		begin = arr.GetLowerBound();
+		end = arr.GetUpperBound();
+		std::stringstream ss;
+		ss << "[";
+		for (long index = begin; index <= end; index++) {
+			CComVariant vValue = arr.GetAt(index);
+			HRESULT hr = vValue.ChangeType(VT_BSTR);
+			if (FAILED(hr))
+				throw wmi_exception(hr, "Failed to convert array to string");
+			ss << utf8::cvt<std::string>(vValue.bstrVal);
+			if (index < end) {
+				ss << ", ";
+			}
+		}
+		ss << "]";
+		return ss.str();
+	}
+
 	std::string row::get_string(const std::string col) {
 		CComBSTR bCol(utf8::cvt<std::wstring>(col).c_str());
 		CComVariant vValue;
@@ -116,18 +142,19 @@ namespace wmi_impl {
 			return "<NULL>";
 
 		if (vValue.vt == (VT_ARRAY | VT_BSTR)) {
-			long begin, end;
-			CComSafeArray<BSTR> arr(vValue.parray);
-			begin = arr.GetLowerBound();
-			end = arr.GetUpperBound();
-			std::stringstream ss;
-			ss << "[";
-			for (long index = begin; index <= end; index++) {
-				CComBSTR bColumn = arr.GetAt(index);
-				ss << utf8::cvt<std::string>(bColumn.m_str) << ", ";
-			}
-			ss << "]";
-			return ss.str();
+			return get_array<BSTR>(vValue.parray);
+		}
+		if (vValue.vt == (VT_ARRAY | VT_I1)) {
+			return get_array<CHAR>(vValue.parray);
+		}
+		if (vValue.vt == (VT_ARRAY | VT_I2)) {
+			return get_array<SHORT>(vValue.parray);
+		}
+		if (vValue.vt == (VT_ARRAY | VT_I4)) {
+			return get_array<INT>(vValue.parray);
+		}
+		if (vValue.vt == (VT_ARRAY | VT_I8)) {
+			return get_array<LONG>(vValue.parray);
 		}
 		hr = vValue.ChangeType(VT_BSTR);
 		if (FAILED(hr))

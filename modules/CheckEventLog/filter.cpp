@@ -1,35 +1,43 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
+#include "filter.hpp"
 
-#include <map>
-#include <list>
+#include <parsers/where.hpp>
+
+#include <simple_timer.hpp>
+
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
+
+#include <str/utils.hpp>
+#include <str/format.hpp>
+#include <nsclient/nsclient_exception.hpp>
 
 #include <boost/bind.hpp>
 #include <boost/assign.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 
-#include <parsers/where.hpp>
+#include <map>
+#include <list>
 
-#include <simple_timer.hpp>
-#include <strEx.h>
-#include "filter.hpp"
 
-#include <nscapi/nscapi_helper_singleton.hpp>
-#include <nscapi/macros.hpp>
 
 typedef boost::optional<std::string> op_str;
 template<eventlog::api::EVT_PUBLISHER_METADATA_PROPERTY_ID T_object, DWORD T_id, DWORD T_desc>
@@ -90,7 +98,7 @@ private:
 		std::string keys = "";
 		BOOST_FOREACH(const eventlog::eventlog_table::value_type &cit, table) {
 			if ((mask&cit.first) == cit.first)
-				strEx::append_list(keys, cit.second, ",");
+				str::format::append_list(keys, cit.second, ",");
 		}
 		return keys;
 	}
@@ -114,16 +122,16 @@ namespace eventlog_filter {
 			if (status == ERROR_INSUFFICIENT_BUFFER) {
 				buffer.resize(dwBufferSize);
 				if (!EvtRender(hContext, hEvent, eventlog::api::EvtRenderEventValues, static_cast<DWORD>(buffer.size()), buffer.get(), &dwBufferSize, &dwPropertyCount))
-					throw nscp_exception("EvtRender failed: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("EvtRender failed: " + error::lookup::last_error());
 			} else 
-				throw nscp_exception("EvtRender failed: " + error::lookup::last_error(status));
+				throw nsclient::nsclient_exception("EvtRender failed: " + error::lookup::last_error(status));
 		}
 	}
 
 	long long new_filter_obj::get_written() const {
 		if (eventlog::api::EvtVarTypeNull == buffer.get()[eventlog::api::EvtSystemTimeCreated].Type)
 			return 0;
-		return static_cast<long long>(strEx::filetime_to_time(buffer.get()[eventlog::api::EvtSystemTimeCreated].FileTimeVal));
+		return static_cast<long long>(str::format::filetime_to_time(buffer.get()[eventlog::api::EvtSystemTimeCreated].FileTimeVal));
 	}
 	std::string new_type_to_string(long long ival) {
 		if (ival == 1)
@@ -161,7 +169,7 @@ namespace eventlog_filter {
 
 	long long new_filter_obj::get_el_type() const {
 		if (eventlog::api::EvtVarTypeNull == buffer.get()[eventlog::api::EvtSystemLevel].Type) {
-			NSC_DEBUG_MSG(" --> missing level: " + strEx::s::xtos(get_id()));
+			NSC_DEBUG_MSG(" --> missing level: " + str::xtos(get_id()));
 			return 0;
 		}
 		return buffer.get()[eventlog::api::EvtSystemLevel].ByteVal;
@@ -170,43 +178,65 @@ namespace eventlog_filter {
 		if (eventlog::api::EvtVarTypeNull == buffer.get()[eventlog::api::EvtSystemTask].Type)
 			return "";
 		int id = buffer.get()[eventlog::api::EvtSystemTask].Int16Val;
-		op_str os = task_cache_.get_cached(get_source(), id);
+		std::string provider = get_provider();
+		op_str os = task_cache_.get_cached(provider, id);
 		if (os)
 			return *os;
-		os = task_cache_.get(get_provider_handle(), get_source(), id);
+		os = task_cache_.get(get_provider_handle(provider), provider, id);
 		if (os)
 			return *os;
 		return "";
 	}
+	#define WINLOG_KEYWORD_AUDITFAILURE 0x0010000000000000
+	#define WINLOG_KEYWORD_AUDITSUCCESS 0x0020000000000000
+	#define WINLOG_KEYWORD_RESERVED     0x00FFFFFFFFFFFFFF
+
 	std::string new_filter_obj::get_keyword() {
 		if (eventlog::api::EvtVarTypeNull == buffer.get()[eventlog::api::EvtSystemKeywords].Type)
 			return "";
 		long long id = buffer.get()[eventlog::api::EvtSystemKeywords].Int64Val;
-		op_str os = keyword_cache_.apply_cached(get_source(), id);
-		if (os)
-			return *os;
-		os = keyword_cache_.apply(get_provider_handle(), get_source(), id);
-		if (os)
-			return *os;
-		return "";
+		id = id & WINLOG_KEYWORD_RESERVED;
+		if (id == 0) {
+			return "";
+		}
+		std::string provider = get_provider();
+		std::string ret = "";
+		if ((id & WINLOG_KEYWORD_AUDITFAILURE) == WINLOG_KEYWORD_AUDITFAILURE) {
+			id = id & ~WINLOG_KEYWORD_AUDITFAILURE;
+			str::format::append_list(ret, "Audit Failure");
+		}
+		if ((id & WINLOG_KEYWORD_AUDITSUCCESS) == WINLOG_KEYWORD_AUDITSUCCESS) {
+			id = id & ~WINLOG_KEYWORD_AUDITSUCCESS;
+			str::format::append_list(ret, "Audit Success");
+		}
+		if (id != 0) {
+			op_str os = keyword_cache_.apply_cached(provider, id);
+			if (!os) {
+				os = keyword_cache_.apply(get_provider_handle(provider), provider, id);
+			}
+			if (os) {
+				str::format::append_list(ret, *os);
+			}
+		}
+		return ret;
 	}
 
-	eventlog::evt_handle& new_filter_obj::get_provider_handle() {
-		if (!hProviderMetadataHandle) {
-			std::string provider = get_source();
-			hProviderMetadataHandle = eventlog::EvtOpenPublisherMetadata(NULL, utf8::cvt<std::wstring>(provider).c_str(), NULL, 0, 0);
-			if (!hProviderMetadataHandle)
-				throw nscp_exception("EvtOpenPublisherMetadata failed for '" + provider + "': " + error::lookup::last_error());
+	eventlog::evt_handle& new_filter_obj::get_provider_handle(const std::string provider) {
+		if (providers_.find(provider) == providers_.end()) {
+			eventlog::api::EVT_HANDLE tmp = eventlog::EvtOpenPublisherMetadata(NULL, utf8::cvt<std::wstring>(provider).c_str(), NULL, 0, 0);
+			if (!tmp)
+				throw nsclient::nsclient_exception("EvtOpenPublisherMetadata failed for '" + provider + "': " + error::lookup::last_error());
+			providers_[provider] = tmp;
 		}
-		return hProviderMetadataHandle;
+		return providers_[provider];
 	}
 
 	std::string new_filter_obj::get_message() {
 		try {
 			std::string msg;
-			int status = eventlog::EvtFormatMessage(get_provider_handle(), hEvent, 0, 0, NULL, eventlog::api::EvtFormatMessageEvent, msg);
+			int status = eventlog::EvtFormatMessage(get_provider_handle(get_provider()), hEvent, 0, 0, NULL, eventlog::api::EvtFormatMessageEvent, msg);
 			if (status != ERROR_SUCCESS) {
-				NSC_DEBUG_MSG("Failed to format eventlog record: ID=" + strEx::s::xtos(get_id()) + ": " + error::format::from_system(status));
+				NSC_DEBUG_MSG("Failed to format eventlog record: ID=" + str::xtos(get_id()) + ": " + error::format::from_system(status));
 				if (status == ERROR_INVALID_PARAMETER)
 					return "";
 				else if (status == ERROR_EVT_MESSAGE_NOT_FOUND)
@@ -214,8 +244,8 @@ namespace eventlog_filter {
 				else if (status == ERROR_EVT_MESSAGE_ID_NOT_FOUND)
 					return "";
 				else if (status == ERROR_EVT_UNRESOLVED_VALUE_INSERT)
-					throw nscp_exception("Invalidly formatted eventlog message for: " + error::lookup::last_error(status));
-				throw nscp_exception("EvtFormatMessage failed: " + error::lookup::last_error(status));
+					throw nsclient::nsclient_exception("Invalidly formatted eventlog message for: " + error::lookup::last_error(status));
+				throw nsclient::nsclient_exception("EvtFormatMessage failed: " + error::lookup::last_error(status));
 			}
 			boost::replace_all(msg, "\n", " ");
 			boost::replace_all(msg, "\r", " ");
@@ -224,12 +254,37 @@ namespace eventlog_filter {
 			if (truncate_message > 0 && msg.length() > truncate_message)
 				msg = msg.substr(0, truncate_message);
 			return msg;
-		} catch (const nscp_exception &e) {
+		} catch (const nsclient::nsclient_exception &e) {
 			return e.reason();
 		}
 	}
 
-	std::string new_filter_obj::get_source() const {
+	std::string new_filter_obj::get_xml() {
+		try {
+			std::string xml;
+			int status = eventlog::EvtFormatMessage(get_provider_handle(get_provider()), hEvent, 0, 0, NULL, eventlog::api::EvtFormatMessageXml, xml);
+			if (status != ERROR_SUCCESS) {
+				NSC_DEBUG_MSG("Failed to format eventlog record: ID=" + str::xtos(get_id()) + ": " + error::format::from_system(status));
+				if (status == ERROR_INVALID_PARAMETER)
+					return "";
+				else if (status == ERROR_EVT_MESSAGE_NOT_FOUND)
+					return "";
+				else if (status == ERROR_EVT_MESSAGE_ID_NOT_FOUND)
+					return "";
+				else if (status == ERROR_EVT_UNRESOLVED_VALUE_INSERT)
+					throw nsclient::nsclient_exception("Invalidly formatted eventlog message for: " + error::lookup::last_error(status));
+				throw nsclient::nsclient_exception("EvtFormatMessage failed: " + error::lookup::last_error(status));
+			}
+			boost::replace_all(xml, "\n", "&#10;");
+			boost::replace_all(xml, "\r", "&#13;");
+			boost::replace_all(xml, "\t", "  ");
+			return xml;
+		} catch (const nsclient::nsclient_exception &e) {
+			return e.reason();
+		}
+	}
+
+	std::string new_filter_obj::get_provider() const {
 		if (eventlog::api::EvtVarTypeNull == buffer.get()[eventlog::api::EvtSystemProviderName].Type)
 			return "";
 		return utf8::cvt<std::string>(buffer.get()[eventlog::api::EvtSystemProviderName].StringVal);
@@ -267,7 +322,7 @@ namespace eventlog_filter {
 		if (str == "error" || str == "err")
 			return 3;
 		context->error("Invalid severity: " + str);
-		return strEx::s::stox<int>(str);
+		return str::stox<int>(str);
 	}
 	int convert_old_type(parsers::where::evaluation_context context, std::string str) {
 		if (str == "error")
@@ -284,7 +339,7 @@ namespace eventlog_filter {
 			return EVENTLOG_AUDIT_FAILURE;
 		try {
 			context->error("Invalid severity: " + str);
-			return strEx::s::stox<int>(str);
+			return str::stox<int>(str);
 		} catch (const std::exception&) {
 			context->error("Failed to convert: " + str);
 			return EVENTLOG_ERROR_TYPE;
@@ -302,7 +357,7 @@ namespace eventlog_filter {
 		if (str == "debug" || str == "verbose")
 			return 5;
 		try {
-			return strEx::s::stox<int>(str);
+			return str::stox<int>(str);
 		} catch (const std::exception&) {
 			context->error("Failed to convert: " + str);
 			return 2;
@@ -323,15 +378,16 @@ namespace eventlog_filter {
 
 	filter_obj_handler::filter_obj_handler() {
 		registry_.add_string()
-			("source", boost::bind(&filter_obj::get_source, _1), "Source system.")
+			("source", boost::bind(&filter_obj::get_provider, _1), "Source system.")
 			("message", boost::bind(&filter_obj::get_message, _1), "The message rendered as a string.")
 			("computer", boost::bind(&filter_obj::get_computer, _1), "Which computer generated the message")
 			("log", boost::bind(&filter_obj::get_log, _1), "alias for file")
 			("file", boost::bind(&filter_obj::get_log, _1), "The logfile name")
 			("guid", boost::bind(&filter_obj::get_guid, _1), "The logfile name")
-			("provider", boost::bind(&filter_obj::get_source, _1), "Source system.")
+			("provider", boost::bind(&filter_obj::get_provider, _1), "Source system.")
 			("task", boost::bind(&filter_obj::get_task, _1), "The type of event (task)")
 			("keyword", boost::bind(&filter_obj::get_keyword, _1), "The keyword associated with this event")
+			("written_str", boost::bind(&filter_obj::get_written_hs, _1), "When the message was written to file as an absolute date string")
 			;
 
 		registry_.add_int()
@@ -348,6 +404,9 @@ namespace eventlog_filter {
 			("level", boost::bind(&filter_obj::get_el_type_s, _1), "")
 			;
 		if (eventlog::api::supports_modern()) {
+			registry_.add_string()
+				("xml", boost::bind(&filter_obj::get_xml, _1), "Get event as XML message.")
+				;
 			registry_.add_converter()
 				(type_custom_type, &fun_convert_new_type)
 				;
@@ -371,4 +430,12 @@ namespace eventlog_filter {
 				;
 		}
 	}
+
+	std::string filter_obj::get_written_hs() const {
+		long long time = get_written();
+		static const boost::posix_time::ptime epoch(boost::gregorian::date(1970, 1, 1));
+		boost::posix_time::ptime pt = epoch + boost::posix_time::seconds(time);
+		return boost::posix_time::to_iso_extended_string(pt);
+	}
+
 }

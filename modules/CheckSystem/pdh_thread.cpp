@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "pdh_thread.hpp"
@@ -204,7 +207,7 @@ void pdh_thread::thread_proc() {
 			BOOST_FOREACH(const std::string &d, object->data) {
 				data.add(d);
 			}
-			cpu_helper.add_item(boost::shared_ptr<filters::cpu::filter_config_object>(new filters::cpu::filter_config_object(*object)), data);
+			cpu_helper.add_item(boost::shared_ptr<filters::cpu::filter_config_object>(new filters::cpu::filter_config_object(*object)), data, "system.cpu");
 		}
 	}
 	BOOST_FOREACH(boost::shared_ptr<filters::mem::filter_config_object> object, mem_filters_.get_object_list()) {
@@ -215,7 +218,7 @@ void pdh_thread::thread_proc() {
 		BOOST_FOREACH(const std::string &d, object->data) {
 			data.add(d);
 		}
-		cpu_helper.add_item(object, data);
+		cpu_helper.add_item(object, data, "system.cpu");
 	}
 	BOOST_FOREACH(boost::shared_ptr<filters::proc::filter_config_object> object, proc_filters_.get_object_list()) {
 		process_helper.add_obj(object);
@@ -231,26 +234,59 @@ void pdh_thread::thread_proc() {
 
 	if (!check_pdh)
 		NSC_LOG_MESSAGE("Not checking PDH data");
+	if (has_realtime)
+		NSC_DEBUG_MSG("Real time checks enabled");
 
 	mutex_.unlock();
 
+	bool disable_network = disable_.find("network") != std::string::npos;
+	if (disable_network) {
+		NSC_LOG_MESSAGE("WARNING: network checking is disabled");
+	}
+	bool disable_handles = disable_.find("handles") != std::string::npos;
+	if (disable_handles) {
+		NSC_LOG_MESSAGE("WARNING: handle checking is disabled");
+	}
+	bool disable_cpu = disable_.find("cpu") != std::string::npos;
+	if (disable_cpu) {
+		NSC_LOG_MESSAGE("WARNING: cpu checking is disabled");
+	}
+	bool disable_metrics = disable_.find("metrics") != std::string::npos;
+	if (disable_metrics) {
+		NSC_LOG_MESSAGE("WARNING: metrics writing is disabled");
+	}
+	bool disable_pdh = disable_.find("pdh") != std::string::npos;
+	if (disable_pdh) {
+		check_pdh = false;
+		NSC_LOG_MESSAGE("WARNING: pdh writing is disabled");
+	}
+	spi_container handles;
 	do {
 		std::list<std::string>	errors;
 		{
-
-			spi_container handles = fetch_spi(errors);
-			windows::system_info::cpu_load load;
-			try {
-				load = windows::system_info::get_cpu_load();
-			} catch (...) {
-				errors.push_back("Failed to get cpu load");
+			if (!disable_handles && i == 0) {
+				try {
+					handles = fetch_spi(errors);
+				} catch (...) {
+					errors.push_back("Failed to get handles");
+				}
 			}
-			write_metrics(handles, load, check_pdh?&pdh:NULL, errors);
+			windows::system_info::cpu_load load;
+			if (!disable_cpu) {
+				try {
+					load = windows::system_info::get_cpu_load();
+				} catch (...) {
+					errors.push_back("Failed to get cpu load");
+				}
+			}
+			if (!disable_metrics) {
+				write_metrics(handles, load, check_pdh ? &pdh : NULL, errors);
+			}
 		}
 		try {
-			if (i == 0)
+			if (i == 0 && !disable_network)
 				network.fetch();
-		} catch (const nscp_exception &e) {
+		} catch (const nsclient::nsclient_exception &e) {
 			errors.push_back("Failed to get network metrics: " + e.reason());
 		} catch (const std::exception &e) {
 			errors.push_back("Failed to get network metrics: " + utf8::utf8_from_native(e.what()));
@@ -287,6 +323,13 @@ void pdh_thread::thread_proc() {
 			NSC_LOG_ERROR_EXR("Failed to close performance counters: ", e);
 		}
 	}
+}
+
+void pdh_thread::add_samples(boost::shared_ptr<nscapi::settings_proxy> settings) {
+	mem_filters_.add_samples(settings);
+	cpu_filters_.add_samples(settings);
+	proc_filters_.add_samples(settings);
+	legacy_filters_.add_samples(settings);
 }
 
 std::map<std::string, long long> pdh_thread::get_int_value(std::string counter) {
@@ -379,7 +422,7 @@ std::map<std::string, windows::system_info::load_entry> pdh_thread::get_cpu_load
 	ret["total"] = load.total;
 	int i = 0;
 	BOOST_FOREACH(const windows::system_info::load_entry &l, load.core)
-		ret["core " + strEx::s::xtos(i++)] = l;
+		ret["core " + str::xtos(i++)] = l;
 	return ret;
 }
 

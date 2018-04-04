@@ -1,68 +1,36 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <boost/shared_ptr.hpp>
 
-#include <socket/socket_helpers.hpp>
+#include "user_config.hpp"
 
-//#define MONGOOSE_NO_FILESYSTEM
-#define MONGOOSE_NO_AUTH
-#define MONGOOSE_NO_CGI
-#define MONGOOSE_NO_SSI
+#include "session_manager_interface.hpp"
+#include "error_handler_interface.hpp"
 
-#include <mongoose/Server.h>
-#include <mongoose/WebController.h>
-#include <mongoose/StreamResponse.h>
+#include <Server.h>
+
+#include <client/simple_client.hpp>
 
 #include <nscapi/nscapi_protobuf.hpp>
 #include <nscapi/plugin.hpp>
 
-struct error_handler {
-	struct status {
-		status() : error_count(0) {}
-		std::string last_error;
-		unsigned int error_count;
-	};
-	struct log_entry {
-		int line;
-		std::string type;
-		std::string file;
-		std::string message;
-		std::string date;
-	};
-	typedef std::vector<log_entry> log_list;
-	error_handler() : error_count_(0) {}
-	void add_message(bool is_error, const log_entry &message);
-	void reset();
-	status get_status();
-	log_list get_errors(std::size_t &position);
-private:
-	boost::timed_mutex mutex_;
-	log_list log_entries;
-	std::string last_error_;
-	unsigned int error_count_;
-};
-
-struct metrics_handler {
-	void set(const std::string &metrics);
-	std::string get();
-private:
-	std::string metrics_;
-	boost::timed_mutex mutex_;
-};
+#include <boost/shared_ptr.hpp>
 
 class WEBServer : public nscapi::impl::simple_plugin {
 public:
@@ -75,8 +43,18 @@ public:
 	bool commandLineExec(const int target_mode, const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response, const Plugin::ExecuteRequestMessage &request_message);
 	void submitMetrics(const Plugin::MetricsMessage &response);
 	bool install_server(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
+	bool cli_add_user(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
+	bool cli_add_role(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
 	bool password(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response);
 private:
 
+	void add_user(std::string key, std::string arg);
+
+	boost::shared_ptr<error_handler_interface> log_handler;
+	boost::shared_ptr<client::cli_client> client;
+	boost::shared_ptr<session_manager_interface> session;
 	boost::shared_ptr<Mongoose::Server> server;
+
+	web_server::user_config users_;
+
 };

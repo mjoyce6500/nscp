@@ -1,23 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "NRPEServer.h"
-#include <strEx.h>
+#include <str/utils.hpp>
 #include <time.h>
-#include <common.hpp>
 
 #include <socket/socket_settings_helper.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
@@ -26,6 +28,8 @@
 
 #include <nscapi/nscapi_core_helper.hpp>
 #include <nscapi/macros.hpp>
+
+#include <config.h>
 
 namespace sh = nscapi::settings_helper;
 
@@ -56,7 +60,7 @@ bool NRPEServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 	settings.notify();
 
 	settings.alias().add_path_to_settings()
-		("NRPE SERVER SECTION", "Section for NRPE (NRPEServer.dll) (check_nrpe) protocol options.")
+		("NRPE Server", "Section for NRPE (NRPEServer.dll) (check_nrpe) protocol options.")
 		;
 
 	settings.alias().add_key_to_settings()
@@ -72,7 +76,7 @@ bool NRPEServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 		("allow nasty characters", sh::bool_key(&allowNasty_, false),
 			"COMMAND ALLOW NASTY META CHARS", "This option determines whether or not the we will allow clients to specify nasty (as in |`&><'\"\\[]{}) characters in arguments.")
 
-		("performance data", sh::bool_fun_key<bool>(boost::bind(&NRPEServer::set_perf_data, this, _1), true),
+		("performance data", sh::bool_fun_key(boost::bind(&NRPEServer::set_perf_data, this, _1), true),
 			"PERFORMANCE DATA", "Send performance data back to nagios (set this to 0 to remove all performance data).", true)
 
 		;
@@ -113,7 +117,7 @@ bool NRPEServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 #endif
 	if (mode == NSCAPI::normalStart || mode == NSCAPI::reloadStart) {
 		if (payload_length_ != 1024)
-			NSC_DEBUG_MSG_STD("Non-standard buffer length (hope you have recompiled check_nrpe changing #define MAX_PACKETBUFFER_LENGTH = " + strEx::s::xtos(payload_length_));
+			NSC_DEBUG_MSG_STD("Non-standard buffer length (hope you have recompiled check_nrpe changing #define MAX_PACKETBUFFER_LENGTH = " + str::xtos(payload_length_));
 		NSC_LOG_ERROR_LISTS(info_.validate());
 
 		std::list<std::string> errors;
@@ -147,9 +151,11 @@ bool NRPEServer::unloadModule() {
 	return true;
 }
 
+
+
 std::list<nrpe::packet> NRPEServer::handle(nrpe::packet p) {
 	std::list<nrpe::packet> packets;
-	strEx::s::token cmd = strEx::s::getToken(p.getPayload(), '!');
+	str::utils::token cmd = str::utils::getToken(p.getPayload(), '!');
 	if (cmd.first == "_NRPE_CHECK") {
 		packets.push_back(nrpe::packet::create_response(NSCAPI::query_return_codes::returnOK, "I (" + utf8::cvt<std::string>(nscapi::plugin_singleton->get_core()->getApplicationVersionString()) + ") seem to be doing fine...", p.get_payload_length()));
 		return packets;
@@ -174,11 +180,16 @@ std::list<nrpe::packet> NRPEServer::handle(nrpe::packet p) {
 	NSCAPI::nagiosReturn ret = -3;
 	nscapi::core_helper ch(get_core(), get_id());
 	try {
+		const unsigned int max_len = p.get_payload_length() - 1;
+		std::string wcmd, wargs;
 		if (encoding_.empty()) {
-			ret = ch.simple_query_from_nrpe(utf8::cvt<std::string>(utf8::to_unicode(cmd.first)), utf8::cvt<std::string>(utf8::to_unicode(cmd.second)), wmsg, wperf);
+			wcmd = utf8::cvt<std::string>(utf8::to_unicode(cmd.first));
+			wargs = utf8::cvt<std::string>(utf8::to_unicode(cmd.second));
 		} else {
-			ret = ch.simple_query_from_nrpe(utf8::cvt<std::string>(utf8::from_encoding(cmd.first, encoding_)), utf8::cvt<std::string>(utf8::from_encoding(cmd.second, encoding_)), wmsg, wperf);
+			wcmd = utf8::cvt<std::string>(utf8::from_encoding(cmd.first, encoding_));
+			wargs = utf8::cvt<std::string>(utf8::from_encoding(cmd.second, encoding_));
 		}
+		ret = ch.simple_query_from_nrpe(wcmd, wargs, wmsg, wperf, multiple_packets_?-1:max_len);
 		switch (ret) {
 		case NSCAPI::query_return_codes::returnOK:
 		case NSCAPI::query_return_codes::returnWARN:
@@ -196,9 +207,12 @@ std::list<nrpe::packet> NRPEServer::handle(nrpe::packet p) {
 			msg = utf8::to_encoding(utf8::cvt<std::wstring>(wmsg), encoding_);
 			perf = utf8::to_encoding(utf8::cvt<std::wstring>(wperf), encoding_);
 		}
-		const unsigned int max_len = p.get_payload_length() - 1;
-		if (multiple_packets_) {
+		if (perf.empty() || noPerfData_) {
+			data = msg;
+		} else {
 			data = msg + "|" + perf;
+		}
+		if (multiple_packets_) {
 			std::size_t data_len = data.size();
 			for (std::size_t i = 0; i < data_len; i += max_len) {
 				if (data_len - i <= max_len)
@@ -207,14 +221,8 @@ std::list<nrpe::packet> NRPEServer::handle(nrpe::packet p) {
 					packets.push_back(nrpe::packet::create_more_response(ret, data.substr(i, max_len), p.get_payload_length()));
 			}
 		} else {
-			if (msg.length() >= max_len) {
-				data = msg.substr(0, max_len);
-			} else if (perf.empty() || noPerfData_) {
-				data = msg;
-			} else if (msg.length() + perf.length() + 1 > max_len) {
-				data = msg;
-			} else {
-				data = msg + "|" + perf;
+			if (data.length() >= max_len) {
+				data = data.substr(0, max_len);
 			}
 			packets.push_back(nrpe::packet::create_response(ret, data, p.get_payload_length()));
 		}

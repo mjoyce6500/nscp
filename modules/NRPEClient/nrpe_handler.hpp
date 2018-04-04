@@ -1,32 +1,29 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <utils.h>
-#include <strEx.h>
-
 #include <nsca/nsca_packet.hpp>
 
 #include <nsca/client/nsca_client_protocol.hpp>
-#include <socket/client.hpp>
 
 #include <nscapi/nscapi_settings_helper.hpp>
-#include <nscapi/nscapi_protobuf_functions.hpp>
-#include <nscapi/nscapi_core_helper.hpp>
 
 #include <boost/make_shared.hpp>
 
@@ -61,10 +58,10 @@ namespace nrpe_handler {
 
 			root_path.add_key()
 
-				("insecure", sh::path_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "insecure", _1)),
+				("insecure", sh::path_fun_key(boost::bind(&parent::set_property_string, this, "insecure", _1)),
 					"Insecure legacy mode", "Use insecure legacy mode to connect to old NRPE server", false)
 
-				("payload length", sh::int_fun_key<int>(boost::bind(&parent::set_property_int, this, "payload length", _1)),
+				("payload length", sh::int_fun_key(boost::bind(&parent::set_property_int, this, "payload length", _1)),
 					"PAYLOAD LENGTH", "Length of payload to/from the NRPE agent. This is a hard specific value so you have to \"configure\" (read recompile) your NRPE agent to use the same value for it to work.")
 				;
 			settings.register_all();
@@ -100,6 +97,9 @@ namespace nrpe_handler {
 		}
 
 		void process(boost::program_options::options_description &desc, client::destination_container &source, client::destination_container &target) {
+
+			namespace po = boost::program_options;
+
 			add_ssl_options(desc, target);
 
 			desc.add_options()

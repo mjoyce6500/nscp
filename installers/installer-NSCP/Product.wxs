@@ -3,10 +3,9 @@
 
   <?include setup.wxs ?>
 
-  <?define Version.String = "$(var.Version.Major).$(var.Version.Minor).$(var.Version.Revision).$(var.Version.Build)" ?>
   <?define Version.Tag = "$(var.Version.Major).$(var.Version.Minor).$(var.Version.Revision)$(var.Version.BuildPad)" ?>
   
-  <?define UpgradeCode = "0B36E3B7-0042-452d-B376-57E0C07ADDAA" ?>
+  <?define UpgradeCode = "$(var.App.UppgradeCode)" ?>
 
   <?include config.wxs ?>
 
@@ -33,7 +32,7 @@
           <Component Id="NSCPEXE" Guid="5C45463A-4AE9-4325-96DB-6E239C034F93" Win64="$(var.Win64)">
             <File Id="NSClientEXE" Name="nscp.exe" DiskId="1" KeyPath="yes" Source="$(var.Source)/nscp.exe" Vital="yes" />
             <ServiceInstall Id="SWCNSCP"
-							Name="[SERVICE_NAME]" DisplayName="$(var.App.Title) ($(var.arch))"
+							Name="[SERVICE_NAME]" DisplayName="[APP_TITLE]"
 							Type="ownProcess" Start="auto" ErrorControl="normal" Interactive="no"
 							Description="Monitoring agent for nagios (and others) used to respond to status queries"
 							Arguments="service --run --name [SERVICE_NAME]">
@@ -49,7 +48,7 @@
             <RemoveFolder Id="RemoveSecurityFolder" Directory="INSTALLLOCATION_SECURITY" On="uninstall" />
           </Component>
           <Component Id="FWException" Guid="7A02C807-749C-4F10-B7C3-8B50BFA74204" Win64="$(var.Win64)">
-            <fire:FirewallException Id="FWX1" Program="[#NSClientEXE]" Name="$(var.App.Title) Monitoring Agent" Scope="any" IgnoreFailure="yes" />
+            <fire:FirewallException Id="FWException" Program="[#NSClientEXE]" Name="$(var.App.Title) Monitoring Agent" Scope="any" IgnoreFailure="yes" />
             <RegistryValue Root="HKCU" Key="Software\NSClient++\Installer" Name="firewall exception" Type="integer" Value="1" KeyPath="yes"/>
           </Component>
           <Component Id="SampleConfig" Guid="D22CC1A3-6479-4f80-81C2-BDE7F37D16C4" Win64="$(var.Win64)">
@@ -121,6 +120,8 @@
               <File Id="SMTPClient" Name="SMTPClient.dll" DiskId="1" Source="$(var.Source)/modules/SMTPClient.dll" Vital="no" />
               <File Id="SyslogClient" Name="SyslogClient.dll" DiskId="1" Source="$(var.Source)/modules/SyslogClient.dll" Vital="no" />
               <File Id="NRDPClient" Name="NRDPClient.dll" DiskId="1" Source="$(var.Source)/modules/NRDPClient.dll" Vital="no" />
+              <File Id="ElasticClient" Name="ElasticClient.dll" DiskId="1" Source="$(var.Source)/modules/ElasticClient.dll" Vital="no" />
+              <File Id="IcingaClient" Name="icinga-client.zip" DiskId="1" Source="$(var.Source)/modules/icinga-client.zip" Vital="no" />
             </Component>
             <Component Id="RequiredPlugins" Guid="A20AFC9C-C36F-4CCE-9D38-3C232235F545" Win64="$(var.Win64)">
               <File Id="ModCommandClient.dll" Name="CommandClient.dll" DiskId="1" Source="$(var.Source)/modules/CommandClient.dll" Vital="yes" />
@@ -142,12 +143,19 @@
               <File Id="ModSimpleFileWriter.dll" Name="SimpleFileWriter.dll" DiskId="1" Source="$(var.Source)/modules/SimpleFileWriter.dll" Vital="no" />
               <File Id="ModCheckLogFile.dll" Name="CheckLogFile.dll" DiskId="1" Source="$(var.Source)/modules/CheckLogFile.dll" Vital="no" />
               <File Id="ModCheckNet.dll" Name="CheckNet.dll" DiskId="1" Source="$(var.Source)/modules/CheckNet.dll" Vital="no" />
+              <File Id="RemoteModules" Name="remote-modules.zip" DiskId="1" Source="$(var.Source)/modules/remote-modules.zip" Vital="no" />
             </Component>
             <Component Id="LuaScript" Guid="C5A3C7E2-77A0-4BE2-B60D-808F4B14F56F" Win64="$(var.Win64)">
               <File Id="ModLUAScript.dll" Name="LUAScript.dll" DiskId="1" Source="$(var.Source)/modules/LUAScript.dll" Vital="no" />
             </Component>
             <Component Id="DotNetPlugins" Guid="E57F4EE3-D5A6-46ED-BC99-018708258154" Win64="$(var.Win64)">
               <File Id="ModDotnetPlugins.dll" Name="DotnetPlugins.dll" DiskId="1" Source="$(var.Source)/modules/DotnetPlugins.dll" Vital="no" />
+            </Component>
+            <Component Id="Op5Client" Guid="D8378E84-4785-41FD-8FCD-2409135FBFF4" Win64="$(var.Win64)">
+              <File Id="ModOp5Client.dll" Name="Op5Client.dll" DiskId="1" Source="$(var.Source)/modules/Op5Client.dll" Vital="no" />
+            </Component>
+            <Component Id="ElasticClient" Guid="0B83F904-327D-47C4-B1AB-F5AE122B2FE7" Win64="$(var.Win64)">
+              <File Id="ModElasticClient.dll" Name="ElasticClient.dll" DiskId="1" Source="$(var.Source)/modules/ElasticClient.dll" Vital="no" />
             </Component>
           </Directory>
           <Component Id="PythonBin" Guid="2802DD6D-C4F2-4BDF-BBE8-A96A041AF899" Win64="$(var.Win64)">
@@ -215,6 +223,7 @@
       <Feature Id="OP5Montoring" Title="OP5 Monitoring system" Description="Configuration and scripts to use NSClien++ with OP5 monitoring solution" Level="1" Absent="allow">
           <ComponentGroupRef Id="Op5ConfigResources" />
           <ComponentGroupRef Id="Op5ScriptResources" />
+          <ComponentRef Id="Op5Client" />
       </Feature>
 
       <Feature Id="Plugins" Title="Plugins" Description="Plugins" Level="1" Absent="allow">
@@ -232,9 +241,13 @@
         <Feature Id="WEBPlugins" Title="WEB Server" Description="NSClient WEB Server. Use this to administrate or check NSCLient via a browser or REST API" Level="1" Absent="allow">
           <ComponentRef Id="WEBServer" />
           <ComponentGroupRef Id="WEBResources" />
+          <ComponentRef Id="MongooseLibs" />
         </Feature>
         <Feature Id="NSCAPlugin" Title="NSCA plugin" Description="Plugin to submit passive results to an NSCA server" Level="1" Absent="allow">
           <ComponentRef Id="NSCA" />
+        </Feature>
+        <Feature Id="ElasticPlugin" Title="Elastic plugin" Description="Plugin to submit passive results and metrics to an Elastic server" Level="1" Absent="allow">
+          <ComponentRef Id="ElasticClient" />
         </Feature>
         <Feature Id="ExtraClientPlugin" Title="Various client plugins" Description="Plugins to connect to various sytems such as syslog, graphite and smtp" Level="1" Absent="allow">
           <ComponentRef Id="ExtraClients" />
@@ -257,8 +270,9 @@
 
     <CustomAction Id='ImportConfig'			    BinaryKey='InstallerHelper' DllEntry='ImportConfig'			    Impersonate='yes' Execute="immediate" Return="check" />
     <CustomAction Id='ScheduleWriteConfig'	BinaryKey='InstallerHelper' DllEntry='ScheduleWriteConfig'	Impersonate='yes' Execute="immediate" Return="check" />
+    <CustomAction Id="ApplyTool"		        BinaryKey="InstallerHelper" DllEntry="ApplyTool"	          Impersonate="yes" Execute="immediate" Return="check"  />
+    <CustomAction Id="DetectTool"		        BinaryKey="InstallerHelper" DllEntry="DetectTool"	          Impersonate="no" Execute="immediate" Return="check"  />
     <CustomAction Id="ExecWriteConfig"		  BinaryKey="InstallerHelper" DllEntry="ExecWriteConfig"	    Impersonate="no" Execute="deferred" Return="check"  />
-    <CustomAction Id="ApplyTool"		        BinaryKey="InstallerHelper" DllEntry="ApplyTool"	          Impersonate="no" Execute="immediate" Return="check"  />
 
     <CustomAction Id='NeedUninstall'		BinaryKey='InstallerHelper' DllEntry='NeedUninstall'	Impersonate='yes' Execute="immediate" Return="check" />
     <CustomAction Id="PreventDowngrading"	Error="Newer version already installed." />
@@ -274,10 +288,11 @@
     <Binary Id='InstallerHelper' SourceFile='$(var.Source)/installer_lib.dll' />
 
     <InstallExecuteSequence>
-      <RemoveExistingProducts After='InstallValidate'/>
+      <RemoveExistingProducts After='InstallValidate'></RemoveExistingProducts>
 
-      <Custom Action="ApplyTool" Before="CostFinalize">NOT (REMOVE ="ALL") AND NOT (UILevel=5)</Custom>
-
+      <Custom Action="DetectTool" After="CostFinalize">NOT (REMOVE ="ALL") AND NOT UILevel=5</Custom>
+      <Custom Action="ApplyTool" After="DetectTool">NOT (REMOVE ="ALL") AND NOT UILevel=5</Custom>
+      <Custom Action="ImportConfig" After="ApplyTool">NOT (REMOVE ="ALL") AND NOT UILevel=5</Custom>
 
       <Custom Action="PreventDowngrading" After="FindRelatedProducts">NEWAPPFOUND</Custom>
       <Custom Action="ScheduleWriteConfig" After="InstallFiles">NOT (REMOVE ="ALL")</Custom>
@@ -288,12 +303,13 @@
       <Custom Action="SetUserGroupUsersProp" After="SetUserGroupUsers">NOT Installed</Custom>
       <Custom Action="TranslateUserGroupUsers" After="SetUserGroupUsersProp">NOT Installed</Custom>
 
+
     </InstallExecuteSequence>
 
     <InstallUISequence>
       <Custom Action="PreventDowngrading" After="FindRelatedProducts">NEWAPPFOUND</Custom>
       <Custom Action="NeedUninstall" After="FindRelatedProducts">1</Custom>
-      <Custom Action="ImportConfig" After="CostFinalize">NOT REMOVE</Custom>
+      <Custom Action="DetectTool" After="NeedUninstall">1</Custom>
     </InstallUISequence>
 
     <Property Id="ALLUSERS">

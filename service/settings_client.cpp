@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "settings_client.hpp"
@@ -22,7 +25,7 @@
 
 #include "../libs/settings_manager/settings_manager_impl.h"
 
-#include <settings/config.hpp>
+#include <config.h>
 
 settings::settings_core* nsclient_core::settings_client::get_core() const {
 	return settings_manager::get_core();
@@ -40,14 +43,14 @@ nsclient_core::settings_client::~settings_client() {
 void nsclient_core::settings_client::startup() {
 	if (started_)
 		return;
-	if (!core_->boot_init(true)) {
+	if (!core_->load_configuration(true)) {
 		std::cout << "boot::init failed" << std::endl;
 		return;
 	}
 	if (load_all_)
-		core_->preboot_load_all_plugin_files();
+		core_->boot_load_all_plugin_files();
 
-	if (!core_->boot_load_all_plugins()) {
+	if (!core_->boot_load_active_plugins()) {
 		std::cout << "boot::load_all_plugins failed!" << std::endl;
 		return;
 	}
@@ -71,9 +74,7 @@ std::string nsclient_core::settings_client::expand_context(const std::string &ke
 void nsclient_core::settings_client::terminate() {
 	if (!started_)
 		return;
-	core_->stop_unload_plugins_pre();
-	core_->stop_exit_pre();
-	core_->stop_exit_post();
+	core_->stop_nsclient();
 	started_ = false;
 }
 
@@ -104,10 +105,11 @@ int nsclient_core::settings_client::migrate_to(std::string target) {
 
 void nsclient_core::settings_client::dump_path(std::string root) {
 	BOOST_FOREACH(const std::string &path, get_core()->get()->get_sections(root)) {
-		if (!root.empty())
+		if (!root.empty()) {
 			dump_path(root + "/" + path);
-		else
+		} else if (!path.empty()) {
 			dump_path(path);
+		}
 	}
 	BOOST_FOREACH(std::string key, get_core()->get()->get_keys(root)) {
 		settings::settings_interface::op_string val = get_core()->get()->get_string(root, key);
@@ -129,8 +131,8 @@ int nsclient_core::settings_client::generate(std::string target) {
 	} catch (settings::settings_exception e) {
 		error_msg(__FILE__, __LINE__, "Failed to initialize settings: " + e.reason());
 		return 1;
-	} catch (NSPluginException &e) {
-		error_msg(__FILE__, __LINE__, "Failed to load plugins: " + utf8::utf8_from_native(e.what()));
+	} catch (nsclient::core::plugin_exception &e) {
+		error_msg(__FILE__, __LINE__, "Failed to load plugins: " + e.reason());
 		return 1;
 	} catch (std::exception &e) {
 		error_msg(__FILE__, __LINE__, "Failed to initialize settings: " + utf8::utf8_from_native(e.what()));
@@ -150,7 +152,7 @@ int nsclient_core::settings_client::set(std::string path, std::string key, std::
 	if (type == settings::settings_core::key_string) {
 		get_core()->get()->set_string(path, key, val);
 	} else if (type == settings::settings_core::key_integer) {
-		get_core()->get()->set_int(path, key, strEx::s::stox<int>(val));
+		get_core()->get()->set_int(path, key, str::stox<int>(val));
 	} else if (type == settings::settings_core::key_bool) {
 		get_core()->get()->set_bool(path, key, settings::settings_interface::string_to_bool(val));
 	} else {
@@ -209,7 +211,7 @@ void nsclient_core::settings_client::list_settings_info() {
 	list_settings_context_info(2, settings_manager::get_settings());
 }
 void nsclient_core::settings_client::activate(const std::string &module) {
-	if (!core_->boot_load_plugin(module)) {
+	if (!core_->boot_load_single_plugin(module)) {
 		std::cerr << "Failed to load module (Wont activate): " << module << std::endl;
 	}
 	core_->boot_start_plugins(false);

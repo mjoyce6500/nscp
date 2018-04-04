@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-#include <iostream>
-
 #include <nscapi/macros.hpp>
 #include <nscapi/nscapi_protobuf.hpp>
 #include <nscapi/nscapi_protobuf_functions.hpp>
-
-#include <utf8.hpp>
-
-//#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
 #include <nscapi/nscapi_core_wrapper.hpp>
 #include <nscapi/nscapi_plugin_wrapper.hpp>
 #include <nscapi/nscapi_core_helper.hpp>
+
+#include <utf8.hpp>
+
+#include <boost/foreach.hpp>
+#include <boost/tokenizer.hpp>
 
 #define CORE_LOG_ERROR(msg) get_core()->log(NSCAPI::log_level::error, __FILE__, __LINE__, msg);
 #define CORE_LOG_ERROR_EX(msg) get_core()->log(NSCAPI::log_level::error, __FILE__, __LINE__, "Exception in: " + msg);
@@ -35,16 +35,68 @@ const nscapi::core_wrapper* nscapi::core_helper::get_core() {
 	return core_;
 }
 
+nscapi::core_helper::storage_map nscapi::core_helper::get_storage_strings(std::string context) {
+	storage_map ret;
+	Plugin::StorageRequestMessage rrm;
+	Plugin::StorageRequestMessage::Request *payload = rrm.add_payload();
+
+	payload->mutable_get()->set_context(context);
+	//payload->mutable_put()->mutable_entry()->set_key(context);
+	std::string buffer;
+	get_core()->storage_query(rrm.SerializeAsString(), buffer);
+
+	Plugin::StorageResponseMessage resp_msg;
+	resp_msg.ParseFromString(buffer);
+	BOOST_FOREACH(const ::Plugin::StorageResponseMessage::Response &payload, resp_msg.payload()) {
+		if (payload.result().code() != Plugin::Common_Result_StatusCodeType_STATUS_OK) {
+			CORE_LOG_ERROR("Failed to store data " + context + ": " + payload.result().message());
+		} else {
+			BOOST_FOREACH(const ::Plugin::Storage::Entry &e, payload.get().entry()) {
+				if (e.value().has_string_data()) {
+					ret[e.key()] = e.value().string_data();
+				} else {
+					CORE_LOG_ERROR("Add support for non string type.");
+				}
+			}
+		}
+	}
+	return ret;
+}
+
+bool nscapi::core_helper::put_storage(std::string context, std::string key, std::string value, bool private_data, bool binary_data) {
+	Plugin::StorageRequestMessage rrm;
+	Plugin::StorageRequestMessage::Request *payload = rrm.add_payload();
+
+	payload->set_plugin_id(plugin_id_);
+	payload->mutable_put()->mutable_entry()->set_context(context);
+	payload->mutable_put()->mutable_entry()->set_key(key);
+	payload->mutable_put()->mutable_entry()->mutable_value()->set_string_data(value);
+	payload->mutable_put()->mutable_entry()->set_private_data(private_data);
+	payload->mutable_put()->mutable_entry()->set_binary_data(binary_data);
+	std::string buffer;
+	get_core()->storage_query(rrm.SerializeAsString(), buffer);
+
+	Plugin::StorageResponseMessage resp_msg;
+	resp_msg.ParseFromString(buffer);
+	bool ret = true;
+	BOOST_FOREACH(const ::Plugin::StorageResponseMessage::Response &payload, resp_msg.payload()) {
+		if (payload.result().code() != Plugin::Common_Result_StatusCodeType_STATUS_OK) {
+			CORE_LOG_ERROR("Failed to store data " + context + ": " + payload.result().message());
+			ret = false;
+		}
+	}
+	return ret;
+}
+
 bool nscapi::core_helper::load_module(std::string name, std::string alias) {
 	Plugin::RegistryRequestMessage rrm;
-	nscapi::protobuf::functions::create_simple_header(rrm.mutable_header());
 	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
 
 	payload->mutable_control()->set_type(Plugin::Registry_ItemType_MODULE);
 	payload->mutable_control()->set_command(Plugin::Registry_Command_LOAD);
 	payload->mutable_control()->set_name(name);
 	if (!alias.empty()) {
-		payload->mutable_control()->set_alias(name);
+		payload->mutable_control()->set_alias(alias);
 	}
 	std::string buffer;
 	get_core()->registry_query(rrm.SerializeAsString(), buffer);
@@ -63,7 +115,6 @@ bool nscapi::core_helper::load_module(std::string name, std::string alias) {
 
 bool nscapi::core_helper::unload_module(std::string name) {
 	Plugin::RegistryRequestMessage rrm;
-	nscapi::protobuf::functions::create_simple_header(rrm.mutable_header());
 	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
 
 	payload->mutable_control()->set_type(Plugin::Registry_ItemType_MODULE);
@@ -88,7 +139,6 @@ bool nscapi::core_helper::submit_simple_message(const std::string channel, const
 	std::string request, buffer;
 
 	Plugin::SubmitRequestMessage request_message;
-	nscapi::protobuf::functions::create_simple_header(request_message.mutable_header());
 	request_message.mutable_header()->set_sender_id(source_id);
 	request_message.mutable_header()->set_source_id(source_id);
 	request_message.mutable_header()->set_recipient_id(target_id);
@@ -117,7 +167,6 @@ bool nscapi::core_helper::emit_event(const std::string module, const std::string
 	std::string request, buffer;
 
 	Plugin::EventMessage request_message;
-	nscapi::protobuf::functions::create_simple_header(request_message.mutable_header());
 
 	typedef std::list<std::map<std::string, std::string> > list_type;
 	typedef std::map<std::string, std::string> hash_type;
@@ -125,7 +174,7 @@ bool nscapi::core_helper::emit_event(const std::string module, const std::string
 	BOOST_FOREACH(const list_type::value_type &v, data) {
 		Plugin::EventMessage::Request *payload = request_message.add_payload();
 
-		payload->set_event(event);
+		payload->set_event(module + ":" + event);
 		BOOST_FOREACH(const hash_type::value_type &e, v) {
 			Plugin::Common::KeyValue *kv = payload->mutable_data()->Add();
 			kv->set_key(e.first);
@@ -145,13 +194,12 @@ bool nscapi::core_helper::emit_event(const std::string module, const std::string
 	std::string request, buffer;
 
 	Plugin::EventMessage request_message;
-	nscapi::protobuf::functions::create_simple_header(request_message.mutable_header());
 
 	typedef std::map<std::string, std::string> hash_type;
 
 	Plugin::EventMessage::Request *payload = request_message.add_payload();
 
-	payload->set_event(event);
+	payload->set_event(module + ":" + event);
 	BOOST_FOREACH(const hash_type::value_type &e, data) {
 		Plugin::Common::KeyValue *kv = payload->mutable_data()->Add();
 		kv->set_key(e.first);
@@ -176,12 +224,12 @@ bool nscapi::core_helper::emit_event(const std::string module, const std::string
 * @param perf The return performance data buffer
 * @return The return of the command
 */
-NSCAPI::nagiosReturn nscapi::core_helper::simple_query(const std::string command, const std::list<std::string> & argument, std::string & msg, std::string & perf) {
+NSCAPI::nagiosReturn nscapi::core_helper::simple_query(const std::string command, const std::list<std::string> & argument, std::string & msg, std::string & perf, std::size_t max_length) {
 	std::string response;
 	simple_query(command, argument, response);
 	if (!response.empty()) {
 		try {
-			return nscapi::protobuf::functions::parse_simple_query_response(response, msg, perf);
+			return nscapi::protobuf::functions::parse_simple_query_response(response, msg, perf, max_length);
 		} catch (std::exception &e) {
 			CORE_LOG_ERROR_EXR("Failed to extract return message: ", e);
 			return NSCAPI::query_return_codes::returnUNKNOWN;
@@ -211,12 +259,23 @@ bool nscapi::core_helper::simple_query(const std::string command, const std::vec
 	return get_core()->query(request, result);
 }
 
-NSCAPI::nagiosReturn nscapi::core_helper::simple_query_from_nrpe(const std::string command, const std::string & buffer, std::string & message, std::string & perf) {
+NSCAPI::nagiosReturn nscapi::core_helper::simple_query_from_nrpe(const std::string command, const std::string & buffer, std::string & message, std::string & perf, std::size_t max_length) {
 	boost::tokenizer<boost::char_separator<char>, std::string::const_iterator, std::string > tok(buffer, boost::char_separator<char>("!"));
 	std::list<std::string> arglist;
 	BOOST_FOREACH(std::string s, tok)
 		arglist.push_back(s);
-	return simple_query(command, arglist, message, perf);
+
+	std::string response;
+	simple_query(command, arglist, response);
+	if (!response.empty()) {
+		try {
+			return nscapi::protobuf::functions::parse_simple_query_response(response, message, perf, max_length);
+		} catch (std::exception &e) {
+			CORE_LOG_ERROR_EXR("Failed to extract return message: ", e);
+			return NSCAPI::query_return_codes::returnUNKNOWN;
+		}
+	}
+	return NSCAPI::query_return_codes::returnUNKNOWN;
 }
 
 NSCAPI::nagiosReturn nscapi::core_helper::exec_simple_command(const std::string target, const std::string command, const std::list<std::string> &argument, std::list<std::string> & result) {
@@ -228,7 +287,6 @@ NSCAPI::nagiosReturn nscapi::core_helper::exec_simple_command(const std::string 
 
 void nscapi::core_helper::register_command(std::string command, std::string description, std::list<std::string> aliases) {
 	Plugin::RegistryRequestMessage request;
-	nscapi::protobuf::functions::create_simple_header(request.mutable_header());
 
 	Plugin::RegistryRequestMessage::Request *payload = request.add_payload();
 	Plugin::RegistryRequestMessage::Request::Registration *regitem = payload->mutable_registration();
@@ -252,7 +310,6 @@ void nscapi::core_helper::register_command(std::string command, std::string desc
 
 void nscapi::core_helper::unregister_command(std::string command) {
 	Plugin::RegistryRequestMessage request;
-	nscapi::protobuf::functions::create_simple_header(request.mutable_header());
 
 	Plugin::RegistryRequestMessage::Request *payload = request.add_payload();
 	Plugin::RegistryRequestMessage::Request::Registration *regitem = payload->mutable_registration();
@@ -273,7 +330,6 @@ void nscapi::core_helper::unregister_command(std::string command) {
 
 void nscapi::core_helper::register_alias(std::string command, std::string description, std::list<std::string> aliases) {
 	Plugin::RegistryRequestMessage request;
-	nscapi::protobuf::functions::create_simple_header(request.mutable_header());
 
 	Plugin::RegistryRequestMessage::Request *payload = request.add_payload();
 	Plugin::RegistryRequestMessage::Request::Registration *regitem = payload->mutable_registration();
@@ -297,7 +353,6 @@ void nscapi::core_helper::register_alias(std::string command, std::string descri
 
 void nscapi::core_helper::register_channel(const std::string channel) {
 	Plugin::RegistryRequestMessage request;
-	nscapi::protobuf::functions::create_simple_header(request.mutable_header());
 
 	Plugin::RegistryRequestMessage::Request *payload = request.add_payload();
 	Plugin::RegistryRequestMessage::Request::Registration *regitem = payload->mutable_registration();
@@ -318,7 +373,6 @@ void nscapi::core_helper::register_channel(const std::string channel) {
 
 void nscapi::core_helper::register_event(const std::string event) {
 	Plugin::RegistryRequestMessage request;
-	nscapi::protobuf::functions::create_simple_header(request.mutable_header());
 
 	Plugin::RegistryRequestMessage::Request *payload = request.add_payload();
 	Plugin::RegistryRequestMessage::Request::Registration *regitem = payload->mutable_registration();

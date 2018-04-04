@@ -1,32 +1,39 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <set>
+#include "plugin_interface.hpp"
+
+#include <nsclient/logger/logger.hpp>
+
+#include <str/xtos.hpp>
+#include <str/utils.hpp>
 
 #include <boost/shared_ptr.hpp>
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
 
-#include "NSCPlugin.h"
-#include <nsclient/logger/logger.hpp>
+#include <set>
 
 namespace nsclient {
-	typedef boost::shared_ptr<NSCPlugin> plugin_type;
+	typedef boost::shared_ptr<nsclient::core::plugin_interface> plugin_type;
 	typedef std::map<unsigned long, plugin_type> plugin_list_type;
 	typedef std::set<unsigned long> plugin_id_type;
 
@@ -98,7 +105,7 @@ namespace nsclient {
 
 		void remove_plugin(unsigned long id) {
 			boost::unique_lock<boost::shared_mutex> writeLock(mutex_, boost::get_system_time() + boost::posix_time::seconds(10));
-			if (!has_valid_lock_log(writeLock, "plugins_list::remove_plugin" + strEx::s::xtos(id)))
+			if (!has_valid_lock_log(writeLock, "plugins_list::remove_plugin" + str::xtos(id)))
 				return;
 			simple_plugin_list_type::iterator it = plugins_.begin();
 			while (it != plugins_.end()) {
@@ -192,7 +199,7 @@ namespace nsclient {
 
 		void remove_plugin(unsigned long id) {
 			boost::unique_lock<boost::shared_mutex> writeLock(mutex_, boost::get_system_time() + boost::posix_time::seconds(10));
-			if (!has_valid_lock_log(writeLock, "plugins_list::remove_plugin" + strEx::s::xtos(id)))
+			if (!has_valid_lock_log(writeLock, "plugins_list::remove_plugin" + str::xtos(id)))
 				return;
 			plugin_list_type::iterator pit = plugins_.find(id);
 			if (pit != plugins_.end())
@@ -284,9 +291,11 @@ namespace nsclient {
 			std::string lc = make_key(channel);
 			if (!have_plugin(plugin_id)) {
 				writeLock.unlock();
-				throw plugins_list_exception("Failed to find plugin: " + strEx::s::xtos(plugin_id) + ", Plugins: " + to_string());
+				throw plugins_list_exception("Failed to find plugin: " + str::xtos(plugin_id) + ", Plugins: " + to_string());
 			}
-			listeners_[lc].insert(plugin_id);
+			BOOST_FOREACH(const std::string c, str::utils::split_lst(lc, ",")) {
+				listeners_[c].insert(plugin_id);
+			}
 		}
 
 		std::list<plugin_type> get(std::string channel) {

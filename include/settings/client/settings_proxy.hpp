@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -45,8 +48,12 @@ namespace settings_client {
 			get_core()->register_path(0xffff, path, title, description, advanced, is_sample);
 		}
 
-		virtual void register_key(std::string path, std::string key, int type, std::string title, std::string description, std::string defValue, bool advanced, bool is_sample) {
-			get_core()->register_key(0xffff, path, key, static_cast<settings::settings_core::key_type>(type), title, description, defValue, advanced, is_sample);
+		virtual void register_subkey(std::string path, std::string title, std::string description, bool advanced, bool is_sample) {
+			get_core()->register_subkey(0xffff, path, title, description, advanced, is_sample);
+		}
+
+		virtual void register_key(std::string path, std::string key, int type, std::string title, std::string description, nscapi::settings::settings_value defValue, bool advanced, bool is_sample) {
+			get_core()->register_key(0xffff, path, key, static_cast<settings::settings_core::key_type>(type), title, description, defValue.get_string(), advanced, is_sample);
 		}
 		virtual void register_tpl(std::string path, std::string title, std::string icon, std::string description, std::string fields) {}
 
@@ -79,6 +86,14 @@ namespace settings_client {
 		virtual std::string expand_path(std::string key) {
 			return get_handler()->expand_path(key);
 		}
+
+		virtual void remove_key(std::string path, std::string key) {
+			return get_impl()->remove_key(path, key);
+		}
+		virtual void remove_path(std::string path) {
+			return get_impl()->remove_path(path);
+		}
+
 
 		virtual void err(const char* file, int line, std::string message) {
 			get_core()->get_logger()->error("settings",file, line, message);

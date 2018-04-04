@@ -1,24 +1,33 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
 #include <nsca/nsca_packet.hpp>
 #include <nsca/client/nsca_client_protocol.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
+#include <client/command_line_parser.hpp>
 #include <socket/client.hpp>
+
+#include <str/format.hpp>
 
 namespace nsca_client {
 	struct connection_data : public socket_helpers::connection_info {
@@ -48,7 +57,7 @@ namespace nsca_client {
 			encoding = arguments.get_string_data("encoding");
 			std::string tmp = arguments.get_string_data("time offset");
 			if (!tmp.empty())
-				time_delta = strEx::stol_as_time_sec(arguments.get_string_data("time offset"));
+				time_delta = str::format::stox_as_time_sec<int>(arguments.get_string_data("time offset"), "s");
 			else
 				time_delta = 0;
 			sender_hostname = sender.address.host;
@@ -128,7 +137,7 @@ namespace nsca_client {
 				if (alias.empty())
 					alias = payload.command();
 				packet.code = nscapi::protobuf::functions::gbp_to_nagios_status(payload.result());
-				packet.result = nscapi::protobuf::functions::query_data_to_nagios_string(payload);
+				packet.result = nscapi::protobuf::functions::query_data_to_nagios_string(payload, len);
 				if (alias != "host_check")
 					packet.service = alias;
 				NSC_TRACE_ENABLED() {

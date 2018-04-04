@@ -1,33 +1,40 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
+#include <settings/settings_core.hpp>
+#include <config.h>
+
+#include <error/error.hpp>
+
+#include <str/xtos.hpp>
+
+#include <handle.hpp>
+#include <buffer.hpp>
+
 #include <boost/algorithm/string.hpp>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 #include <string>
-
-#include <settings/settings_core.hpp>
-#include <error.hpp>
-#include <settings/config.hpp>
-
-#include <handle.hpp>
-#include <buffer.hpp>
 
 #define BUFF_LEN 4096
 
@@ -70,7 +77,7 @@ namespace settings {
 				return utf8::cvt<std::string>(path);
 			}
 			reg_key get_subkey(std::wstring sub_path) const {
-				return reg_key(hKey, path + boost::replace_all_copy(sub_path, _T("/"), _T("\\")));
+				return reg_key(hKey, path + boost::replace_all_copy(sub_path, L"/", L"\\"));
 			}
 			reg_key get_subkey(std::string sub_path) const {
 				return get_subkey(utf8::cvt<std::wstring>(sub_path));
@@ -111,7 +118,7 @@ namespace settings {
 			}
 			inline void setValueEx(const std::string &key, DWORD type, const std::string &value) const {
 				std::wstring wvalue = utf8::cvt<std::wstring>(value);
-				reg_buffer buffer(wvalue.size() + 10, wvalue.c_str());
+				reg_buffer buffer(wvalue.size() + 1, wvalue.c_str());
 				setValueEx(key, type, buffer);
 			}
 		};
@@ -158,7 +165,7 @@ namespace settings {
 			op_string str = get_real_string(key);
 			if (str && !str->empty()) {
 				try {
-					return strEx::s::stox<int>(*str);
+					return str::stox<int>(*str);
 				} catch (const std::exception &e) {
 					throw settings_exception(__FILE__, __LINE__, "Failed to convert " + key.first + "." + key.second + " = " + *str + " to a number");
 				}
@@ -285,7 +292,7 @@ namespace settings {
 					throw settings_exception(__FILE__, __LINE__, "String to long: " + path.to_string());
 				} else if (type == REG_DWORD) {
 					DWORD dw = *(reinterpret_cast<DWORD*>(bData.get()));
-					return strEx::s::xtos(dw);
+					return str::xtos(dw);
 				}
 				throw settings_exception(__FILE__, __LINE__, "Unsupported key type: " + path.to_string());
 			} else if (lRet == ERROR_FILE_NOT_FOUND)

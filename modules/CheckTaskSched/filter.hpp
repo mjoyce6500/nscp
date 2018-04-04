@@ -1,20 +1,37 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
+
+#include <nsclient/nsclient_exception.hpp>
+
+#include <parsers/where/node.hpp>
+#include <parsers/where/engine.hpp>
+#include <parsers/filter/modern_filter.hpp>
+#include <parsers/where/filter_handler_impl.hpp>
+
+#include <error/error.hpp>
+#include <str/format.hpp>
+#include <str/utils.hpp>
+
+#include <boost/optional.hpp>
+#include <boost/shared_ptr.hpp>
 
 #include <map>
 #include <string>
@@ -25,16 +42,6 @@
 #include <MSTask.h>
 #include <taskschd.h>
 
-#include <boost/optional.hpp>
-#include <boost/shared_ptr.hpp>
-
-#include <error.hpp>
-#include <format.hpp>
-
-#include <parsers/where/node.hpp>
-#include <parsers/where/engine.hpp>
-#include <parsers/filter/modern_filter.hpp>
-#include <parsers/where/filter_handler_impl.hpp>
 
 namespace tasksched_filter {
 	namespace helpers {
@@ -54,12 +61,12 @@ namespace tasksched_filter {
 			operator unsigned long long() {
 				if (never_ || date_ == 0)
 					return 0;
-				return strEx::filetime_to_time(date_);
+				return str::format::filetime_to_time(date_);
 			}
 			operator const unsigned long long() const {
 				if (never_ || date_ == 0)
 					return 0;
-				return strEx::filetime_to_time(date_);
+				return str::format::filetime_to_time(date_);
 			}
 		};
 		typedef boost::optional<std::string> op_string;
@@ -146,7 +153,7 @@ namespace tasksched_filter {
 				raw_type tmp;
 				HRESULT hr = (object->*fun_)(&tmp);
 				if (traits::has_failed(hr)) {
-					throw nscp_exception("Failed to fetch " + title + ": " + ::error::format::from_system(hr));
+					throw nsclient::nsclient_exception("Failed to fetch " + title + ": " + ::error::format::from_system(hr));
 				} else {
 					data = traits::convert(hr, tmp);
 					traits::cleanup(tmp);
@@ -255,11 +262,11 @@ namespace tasksched_filter {
 				return "has_more_runs";
 			if (i == SCHED_S_TASK_NO_VALID_TRIGGERS)
 				return "no_valid_triggers";
-			return strEx::s::xtos(i);
+			return str::xtos(i);
 		}
 		long long get_most_recent_run_time() { return most_recent_run_time(task, title); }
 		std::string get_most_recent_run_time_s() {
-			return format::format_date(get_most_recent_run_time());
+			return str::format::format_date(get_most_recent_run_time());
 		}
 		bool get_has_run() {
 			return most_recent_run_time(task, title).has_run();
@@ -310,16 +317,16 @@ namespace tasksched_filter {
 		long long is_enabled() { return enabled(task, get_title()); }
 
 		std::string get_title() { if (str_title.empty()) str_title = title(task, "unknown"); return str_title; }
-		std::string get_account_name() { throw nscp_exception("account_name is not supported"); }
-		std::string get_application_name() { throw nscp_exception("application_name is not supported"); }
+		std::string get_account_name() { throw nsclient::nsclient_exception("account_name is not supported"); }
+		std::string get_application_name() { throw nsclient::nsclient_exception("application_name is not supported"); }
 		std::string get_comment() { return comment(get_reginfo(), get_title()); }
 		std::string get_creator() { return creator(get_reginfo(), get_title()); }
 
-		std::string get_parameters() { throw nscp_exception("get_parameters is not supported"); }
-		std::string get_working_directory() { throw nscp_exception("working_directory is not supported"); }
+		std::string get_parameters() { throw nsclient::nsclient_exception("get_parameters is not supported"); }
+		std::string get_working_directory() { throw nsclient::nsclient_exception("working_directory is not supported"); }
 
 		long long get_exit_code() { return exit_code(task, get_title()); }
-		long long get_flags() { throw nscp_exception("flags is not supported"); }
+		long long get_flags() { throw nsclient::nsclient_exception("flags is not supported"); }
 		long long get_max_run_time() { return convert_runtime(max_run_time(get_settings(), get_title())); }
 		long long get_priority() { return priority(get_settings(), get_title()); }
 
@@ -336,11 +343,11 @@ namespace tasksched_filter {
 				return "running";
 			if (i == TASK_STATE_DISABLED)
 				return "disabled";
-			return strEx::s::xtos(i);
+			return str::xtos(i);
 		}
 		long long get_most_recent_run_time() { return most_recent_run_time(task, get_title()); }
 		std::string get_most_recent_run_time_s() {
-			return format::format_date(get_most_recent_run_time());
+			return str::format::format_date(get_most_recent_run_time());
 		}
 		bool get_has_run() {
 			return most_recent_run_time(task, get_title()).has_run();

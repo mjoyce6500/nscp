@@ -21,13 +21,10 @@ IF(WIN32)
 		settings_manager_impl.h
 		settings_handler_impl.hpp
 		
-		${NSCP_INCLUDEDIR}/charEx.h
 		${NSCP_INCLUDEDIR}/config.h
-		${NSCP_INCLUDEDIR}/settings/config.hpp
 
 		${NSCP_INCLUDEDIR}/settings/settings_core.hpp
 		${NSCP_INCLUDEDIR}/settings/settings_interface_impl.hpp
-#		${NSCP_INCLUDEDIR}/settings/client/settings_client.hpp
 
 
 		${NSCP_INCLUDEDIR}/settings/impl/settings_ini.hpp
@@ -47,14 +44,6 @@ IF(OPENSSL_FOUND)
 	SET(EXTRA_LIBS ${EXTRA_LIBS} ${OPENSSL_LIBRARIES})
 	INCLUDE_DIRECTORIES(${OPENSSL_INCLUDE_DIR})
 ENDIF(OPENSSL_FOUND)
-
-IF(MINIZ_FOUND)
-	INCLUDE_DIRECTORIES(${MINIZ_INCLUDE_DIR})
-	SET(service_SRCS ${service_SRCS}
-		${MINIZ_INCLUDE_DIR}/miniz.c
-	)
-	ADD_DEFINITIONS(-DHAVE_MINIZ)
-ENDIF(MINIZ_FOUND)
 
 IF(CRYPTOPP_FOUND)
 	ADD_DEFINITIONS(-DHAVE_LIBCRYPTOPP)

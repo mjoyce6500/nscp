@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -43,11 +46,12 @@ namespace simple_scheduler {
 		cron_parser::schedule schedule;
 		bool has_duration;
 		bool has_schedule;
+		double randomeness;
 
 	public:
-		task() : id(0), duration(boost::posix_time::seconds(0)), has_duration(false), has_schedule(false){}
-		task(std::string tag, boost::posix_time::time_duration duration) : id(0), tag(tag), duration(duration), has_duration(true), has_schedule(false){}
-		task(std::string tag, cron_parser::schedule schedule) : id(0), tag(tag), schedule(schedule), has_duration(false), has_schedule(true) {}
+		task() : id(0), duration(boost::posix_time::seconds(0)), has_duration(false), has_schedule(false), randomeness(0.0) {}
+		task(std::string tag, boost::posix_time::time_duration duration, double randomeness) : id(0), tag(tag), duration(duration), has_duration(true), has_schedule(false), randomeness(randomeness) {}
+		task(std::string tag, cron_parser::schedule schedule) : id(0), tag(tag), schedule(schedule), has_duration(false), has_schedule(true), randomeness(0.0) {}
 
 		bool is_disabled() const {
 			return !has_duration && !has_schedule;
@@ -56,7 +60,7 @@ namespace simple_scheduler {
 			std::stringstream ss;
 			ss << id << "[" << tag << "] = ";
 			if (has_duration)
-				ss << duration.total_seconds();
+				ss << duration.total_seconds() << " " << (randomeness*100) << "% randomness";
 			else if (has_schedule)
 				ss << schedule.to_string();
 			else
@@ -65,7 +69,13 @@ namespace simple_scheduler {
 		}
 		boost::posix_time::ptime get_next(boost::posix_time::ptime now_time) const {
 			if (has_duration && duration.total_seconds() > 0) {
-				return now_time + boost::posix_time::seconds(rand() % duration.total_seconds());
+				double total_delay = duration.total_seconds();
+				double val = (total_delay * randomeness) * (static_cast<double>(rand()) / static_cast<double>(RAND_MAX));
+				double time_to_wait = (total_delay * (1.0 - randomeness)) + val;
+				if (time_to_wait < 1.0) {
+					time_to_wait = 1.0;
+				}
+				return now_time + boost::posix_time::seconds(time_to_wait);
 			} else if (has_duration) {
 				return now_time;
 			}
@@ -177,11 +187,13 @@ namespace simple_scheduler {
 		int get_metric_executed() const;
 		int get_metric_compleated() const;
 		int get_metric_errors() const;
+		int get_avg_time() const;
+		int get_metric_rate() const;
 		std::size_t get_metric_threads() const;
 		std::size_t get_metric_ql();
 		bool has_metrics() const;
 
-		int add_task(std::string tag, boost::posix_time::time_duration duration);
+		int add_task(std::string tag, boost::posix_time::time_duration duration, double randomness);
 		int add_task(std::string tag, cron_parser::schedule schedule);
 		void remove_task(int id);
 		op_task_object get_task(int id);
@@ -217,7 +229,7 @@ namespace simple_scheduler {
 				handler_->on_trace(file, line, err);
 		}
 
-		inline boost::posix_time::ptime now() {
+		inline boost::posix_time::ptime now() const {
 			return boost::get_system_time();
 		}
 	};

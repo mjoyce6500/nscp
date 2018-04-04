@@ -1,45 +1,49 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef WIN32
-#include <poll.h>
-#include <sys/inotify.h>
-#endif
+#include "realtime_thread.hpp"
+#include "filter.hpp"
+#include "realtime_data.hpp"
 
-#include <map>
-#include <vector>
-
-#include <boost/foreach.hpp>
-#include <boost/filesystem.hpp>
-
-#include <time.h>
-#include <error.hpp>
+#include <parsers/filter/realtime_helper.hpp>
 
 #include <nscapi/nscapi_protobuf_functions.hpp>
 #include <nscapi/nscapi_core_helper.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
 #include <nscapi/macros.hpp>
 
+#include <str/utils.hpp>
+#include <error/error.hpp>
 #include <simple_timer.hpp>
 
-#include "realtime_thread.hpp"
-#include "filter.hpp"
+#include <boost/foreach.hpp>
+#include <boost/filesystem.hpp>
 
-#include "realtime_data.hpp"
-#include <parsers/filter/realtime_helper.hpp>
+#include <map>
+#include <vector>
+#include <time.h>
+
+#ifndef WIN32
+#include <poll.h>
+#include <sys/inotify.h>
+#endif
+
 
 typedef parsers::where::realtime_filter_helper<runtime_data, filters::filter_config_object> filter_helper;
 
@@ -50,6 +54,7 @@ void real_time_thread::thread_proc() {
 	BOOST_FOREACH(boost::shared_ptr<filters::filter_config_object> object, filters_.get_object_list()) {
 		runtime_data data;
 		data.set_split(object->line_split, object->column_split);
+		data.set_read_from_start(object->read_from_start);
 		BOOST_FOREACH(const std::string &file, object->files) {
 			boost::filesystem::path path = file;
 			data.add_file(path);
@@ -74,12 +79,12 @@ void real_time_thread::thread_proc() {
 			}
 #endif
 		}
-		helper.add_item(object, data);
+		helper.add_item(object, data, "logfile");
 	}
 
 	logs.sort();
 	logs.unique();
-	NSC_DEBUG_MSG_STD("Subscribing to folders: " + strEx::s::joinEx(logs, ", "));
+	NSC_DEBUG_MSG_STD("Subscribing to folders: " + str::utils::joinEx(logs, ", "));
 	std::vector<std::string> files_list(logs.begin(), logs.end());
 #ifdef WIN32
 	HANDLE *handles = new HANDLE[1 + files_list.size()];
@@ -168,18 +173,24 @@ bool real_time_thread::start() {
 	if (!enabled_)
 		return true;
 #ifdef WIN32
-	stop_event_ = CreateEvent(NULL, TRUE, FALSE, _T("EventLogShutdown"));
+	stop_event_ = CreateEvent(NULL, TRUE, FALSE, L"EventLogShutdown");
 #else
-	pipe(stop_event_);
+	if (pipe(stop_event_) == -1) {
+		NSC_LOG_ERROR("Failed to create pipe");
+	}
 #endif
 	thread_ = boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&real_time_thread::thread_proc, this)));
 	return true;
 }
 bool real_time_thread::stop() {
+	if (!enabled_)
+		return true;
 #ifdef WIN32
 	SetEvent(stop_event_);
 #else
-	write(stop_event_[1], " ", 4);
+	if (write(stop_event_[1], " ", 4) == -1) {
+		NSC_LOG_ERROR("Failed to signal a stop");
+	}
 #endif
 	if (thread_)
 		thread_->join();

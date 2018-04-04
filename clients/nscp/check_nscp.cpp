@@ -1,28 +1,34 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "check_nscp.hpp"
-#include <boost/filesystem.hpp>
-#include <config.h>
-#include <common.hpp>
 
+#include "../modules/NSCPClient/nscp_handler.hpp"
+
+#include <config.h>
 #include <types.hpp>
 
+#include <nscapi/nscapi_protobuf_nagios.hpp>
 #include <nscapi/nscapi_protobuf_functions.hpp>
 #include <nscapi/nscapi_helper.hpp>
+
+#include <boost/filesystem.hpp>
 
 std::string gLog = "";
 
@@ -46,7 +52,7 @@ int main(int argc, char* argv[]) {
 		ret = nscapi::plugin_helper::maxState(ret, nscapi::protobuf::functions::gbp_to_nagios_status(response.result()));
 		BOOST_FOREACH(const ::Plugin::QueryResponseMessage_Response_Line &line, response.lines()) {
 			std::cout << line.message();
-			std::string tmp = nscapi::protobuf::functions::build_performance_data(line);
+			std::string tmp = nscapi::protobuf::functions::build_performance_data(line, nscapi::protobuf::functions::no_truncation);
 			if (!tmp.empty())
 				std::cout << '|' << tmp;
 		}
@@ -178,7 +184,7 @@ struct stdout_client_handler : public socket_helpers::client::client_handler {
 			std::string key = file.substr(pstart + 1, pend - 2);
 
 			std::string tmp = file;
-			strEx::s::replace(file, "${" + key + "}", getFolder(key));
+			str::utils::replace(file, "${" + key + "}", getFolder(key));
 			if (file == tmp)
 				pos = file.find_first_of('$', pos + 1);
 			else

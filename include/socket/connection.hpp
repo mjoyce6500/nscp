@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -154,7 +157,7 @@ namespace socket_helpers {
 
 			virtual void start_read_request() = 0;
 			virtual void handle_read_request(const boost::system::error_code& e, std::size_t bytes_transferred) {
-				trace("handle_read_request(" + utf8::utf8_from_native(e.message()) + ", " + strEx::s::xtos(bytes_transferred) + ")");
+				trace("handle_read_request(" + utf8::utf8_from_native(e.message()) + ", " + str::xtos(bytes_transferred) + ")");
 				if (!e) {
 					if (protocol_->on_read(buffer_.begin(), buffer_.begin() + bytes_transferred)) {
 						do_process();
@@ -169,7 +172,7 @@ namespace socket_helpers {
 
 			virtual void start_write_request(const boost::asio::const_buffer& response) = 0;
 			virtual void handle_write_response(const boost::system::error_code& e, std::size_t bytes_transferred) {
-				trace("handle_write_response(" + utf8::utf8_from_native(e.message()) + ", " + strEx::s::xtos(bytes_transferred) + ")");
+				trace("handle_write_response(" + utf8::utf8_from_native(e.message()) + ", " + str::xtos(bytes_transferred) + ")");
 				if (!e) {
 					protocol_->on_write();
 					do_process();
@@ -225,7 +228,7 @@ namespace socket_helpers {
 						));
 			}
 			virtual void start_write_request(const boost::asio::const_buffer& response) {
-				this->trace("start_write_request(" + strEx::s::xtos(boost::asio::buffer_size(response)) + ")");
+				this->trace("start_write_request(" + str::xtos(boost::asio::buffer_size(response)) + ")");
 				boost::asio::async_write(socket_, boost::asio::const_buffers_1(response), parent_type::strand_.wrap(
 					boost::bind(&parent_type::handle_write_response, this->shared_from_this(), boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred)
 					));
@@ -270,7 +273,7 @@ namespace socket_helpers {
 						parent_type::protocol_->log_error(__FILE__, __LINE__, "Seems we other end is not using ssl: " + utf8::utf8_from_native(e.message()));
 						parent_type::protocol_->log_error(__FILE__, __LINE__, "Please review the ssl option as well as ssl options in settings.");
 					} else {
-						parent_type::protocol_->log_error(__FILE__, __LINE__, "Failed to establish secure connection: " + utf8::utf8_from_native(e.message()) + ": " + strEx::s::xtos(ERR_GET_REASON(e.value())));
+						parent_type::protocol_->log_error(__FILE__, __LINE__, "Failed to establish secure connection: " + utf8::utf8_from_native(e.message()) + ": " + str::xtos(ERR_GET_REASON(e.value())));
 					}
 					parent_type::on_done(false);
 				}
@@ -287,7 +290,7 @@ namespace socket_helpers {
 			}
 
 			virtual void start_write_request(const boost::asio::const_buffer& response) {
-				this->trace("ssl::start_write_request(" + strEx::s::xtos(boost::asio::buffer_size(response)) + ")");
+				this->trace("ssl::start_write_request(" + str::xtos(boost::asio::buffer_size(response)) + ")");
 				boost::asio::async_write(ssl_socket_, boost::asio::const_buffers_1(response),
 					parent_type::strand_.wrap(
 						boost::bind(&parent_type::handle_write_response, this->shared_from_this(), boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred)

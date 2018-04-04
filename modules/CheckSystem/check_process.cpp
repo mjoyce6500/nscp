@@ -1,20 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "check_process.hpp"
+
+#include <CheckMemory.h>
 
 #include <parsers/where.hpp>
 #include <parsers/where/node.hpp>
@@ -22,16 +27,11 @@
 #include <parsers/filter/modern_filter.hpp>
 #include <parsers/where/filter_handler_impl.hpp>
 #include <parsers/filter/cli_helper.hpp>
-
 #include <parsers/filter/realtime_helper.hpp>
 
 #include <nscapi/nscapi_protobuf_functions.hpp>
 
 #include <string>
-
-#include <format.hpp>
-
-#include <CheckMemory.h>
 
 namespace check_proc_filter {
 	typedef process_helper::process_info filter_obj;
@@ -126,7 +126,7 @@ namespace process_checks {
 			}
 
 			std::string to_string() const {
-				return strEx::s::xtos(list.size()) + " processes";
+				return str::xtos(list.size()) + " processes";
 			}
 		};
 
@@ -189,7 +189,7 @@ namespace process_checks {
 			BOOST_FOREACH(const std::string &d, object->data) {
 				data.add(d);
 			}
-			proc_helper->helper.add_item(object, data);
+			proc_helper->helper.add_item(object, data, "system.process");
 
 		}
 
@@ -237,7 +237,7 @@ namespace process_checks {
 			filter_helper.add_crit_option("state = 'stopped'", "count = 0");
 
 			filter_helper.add_options(filter.get_filter_syntax(), "unknown");
-			filter_helper.add_syntax("${status}: ${problem_list}", filter.get_filter_syntax(), "${exe}=${state}", "${exe}", "%(status): No processes found", "%(status): all processes are ok.");
+			filter_helper.add_syntax("${status}: ${problem_list}", "${exe}=${state}", "${exe}", "UNKNOWN: No processes found", "%(status): all processes are ok.");
 			filter_helper.get_desc().add_options()
 				("process", po::value<std::vector<std::string>>(&processes), "The service to check, set this to * to check all services")
 				("scan-info", po::value<bool>(&deep_scan), "If all process metrics should be fetched (otherwise only status is fetched)")

@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
-#include <nscp_string.hpp>
-
 #include <nscapi/nscapi_helper.hpp>
+
+#include <str/xtos.hpp>
+#include <str/utils.hpp>
+
+#include <boost/foreach.hpp>
 
 #define REPORT_ERROR	0x01
 #define REPORT_WARNING	0x02
@@ -25,7 +28,7 @@
 
 unsigned int nscapi::report::parse(std::string str) {
 	unsigned int report = 0;
-	BOOST_FOREACH(const std::string &key, strEx::s::splitEx(str, std::string(","))) {
+	BOOST_FOREACH(const std::string &key, str::utils::split_lst(str, std::string(","))) {
 		if (key == "all") {
 			report |= REPORT_ERROR | REPORT_OK | REPORT_UNKNOWN | REPORT_WARNING;
 		} else if (key == "error" || key == "err" || key == "critical" || key == "crit") {
@@ -170,7 +173,7 @@ std::string nscapi::plugin_helper::translateReturn(NSCAPI::nagiosReturn returnCo
 	else if (returnCode == NSCAPI::query_return_codes::returnUNKNOWN)
 		return "UNKNOWN";
 	else
-		return "BAD_CODE: " + strEx::s::xtos(returnCode);
+		return "BAD_CODE: " + str::xtos(returnCode);
 }
 /**
 * Translate a string into the corresponding return code
@@ -189,19 +192,19 @@ NSCAPI::nagiosReturn nscapi::plugin_helper::translateReturn(std::string str) {
 }
 /**
 * Returns the biggest of the two states
-* STATE_UNKNOWN < STATE_OK < STATE_WARNING < STATE_CRITICAL
+* STATE_OK < STATE_WARNING < STATE_CRITICAL < STATE_UNKNOWN
 * @param a
 * @param b
 * @return
 */
 NSCAPI::nagiosReturn nscapi::plugin_helper::maxState(NSCAPI::nagiosReturn a, NSCAPI::nagiosReturn b) {
-	if (a == NSCAPI::query_return_codes::returnCRIT || b == NSCAPI::query_return_codes::returnCRIT)
+	if (a == NSCAPI::query_return_codes::returnUNKNOWN || b == NSCAPI::query_return_codes::returnUNKNOWN)
+		return NSCAPI::query_return_codes::returnUNKNOWN;
+	else if (a == NSCAPI::query_return_codes::returnCRIT || b == NSCAPI::query_return_codes::returnCRIT)
 		return NSCAPI::query_return_codes::returnCRIT;
 	else if (a == NSCAPI::query_return_codes::returnWARN || b == NSCAPI::query_return_codes::returnWARN)
 		return NSCAPI::query_return_codes::returnWARN;
 	else if (a == NSCAPI::query_return_codes::returnOK || b == NSCAPI::query_return_codes::returnOK)
 		return NSCAPI::query_return_codes::returnOK;
-	else if (a == NSCAPI::query_return_codes::returnUNKNOWN || b == NSCAPI::query_return_codes::returnUNKNOWN)
-		return NSCAPI::query_return_codes::returnUNKNOWN;
 	return NSCAPI::query_return_codes::returnUNKNOWN;
 }

@@ -12,6 +12,8 @@
 #include <file_helpers.hpp>
 #include <config.h>
 
+#include <str/xtos.hpp>
+#include <str/format.hpp>
 #include <utf8.hpp>
 
 static settings_manager::NSCSettingsImpl* settings_impl = NULL;
@@ -161,7 +163,7 @@ namespace settings_manager {
 			boot_conf.LoadFile(boot_.string().c_str());
 			get_logger()->debug("settings", __FILE__, __LINE__, "Boot.ini found in: " + boot_.string());
 			for (int i = 0; i < 20; i++) {
-				std::string v = utf8::cvt<std::string>(boot_conf.GetValue(L"settings", utf8::cvt<std::wstring>(strEx::s::xtos(i)).c_str(), L""));
+				std::string v = utf8::cvt<std::string>(boot_conf.GetValue(L"settings", utf8::cvt<std::wstring>(str::xtos(i)).c_str(), L""));
 				if (!v.empty())
 					order.push_back(expand_context(v));
 			}
@@ -173,7 +175,7 @@ namespace settings_manager {
 		}
 		std::string boot_order;
 		BOOST_FOREACH(const std::string &k, order) {
-			strEx::append_list(boot_order, k, ", ");
+			str::format::append_list(boot_order, k, ", ");
 		}
 		BOOST_FOREACH(std::string k, order) {
 			if (context_exists(k)) {
@@ -207,17 +209,17 @@ namespace settings_manager {
 		CSimpleIni boot_conf;
 		boot_conf.LoadFile(boot_.string().c_str());
 		for (int i = 0; i < 20; i++) {
-			std::string v = utf8::cvt<std::string>(boot_conf.GetValue(L"settings", utf8::cvt<std::wstring>(strEx::s::xtos(i)).c_str(), L""));
+			std::string v = utf8::cvt<std::string>(boot_conf.GetValue(L"settings", utf8::cvt<std::wstring>(str::xtos(i)).c_str(), L""));
 			if (!v.empty()) {
 				order.push_back(expand_context(v));
-				boot_conf.SetValue(L"settings", utf8::cvt<std::wstring>(strEx::s::xtos(i)).c_str(), L"");
+				boot_conf.SetValue(L"settings", utf8::cvt<std::wstring>(str::xtos(i)).c_str(), L"");
 			}
 		}
 		order.remove(key);
 		order.push_front(key);
 		int i = 1;
 		BOOST_FOREACH(const std::string &k, order) {
-			boot_conf.SetValue(L"settings", utf8::cvt<std::wstring>(strEx::s::xtos(i++)).c_str(), utf8::cvt<std::wstring>(k).c_str());
+			boot_conf.SetValue(L"settings", utf8::cvt<std::wstring>(str::xtos(i++)).c_str(), utf8::cvt<std::wstring>(k).c_str());
 		}
 		boot_conf.SaveFile(boot_.string().c_str());
 		get_core()->create_instance("master", key)->ensure_exists();
@@ -253,7 +255,6 @@ namespace settings_manager {
 		try {
 
 			settings_impl = new NSCSettingsImpl(provider);
-			settings_impl->get_logger()->error("settings", __FILE__, __LINE__, "++++");
 			get_core()->set_base(provider->expand_path("${base-path}"));
 			get_core()->boot(context);
 			get_core()->set_ready();
@@ -272,14 +273,12 @@ namespace settings_manager {
 
 	bool init_installer_settings(provider_interface *provider, std::string context) {
 		try {
-
 			settings_impl = new NSCSettingsImpl(provider);
-			settings_impl->get_logger()->error("settings", __FILE__, __LINE__, "++++");
 			get_core()->set_base(provider->expand_path("${base-path}"));
 			if (settings_impl->supports_edit(context)) {
 				get_core()->boot(context);
 				get_core()->set_ready();
-				return false;
+				return true;
 			}
 		} catch (const settings::settings_exception &e) {
 			get_core()->get_logger()->error("settings", __FILE__, __LINE__, "Failed to initialize settings: " + e.reason());

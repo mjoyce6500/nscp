@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <boost/program_options.hpp>
@@ -38,28 +41,27 @@ bool CheckLogFile::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) 
 	thread_->filters_.set_path(settings.alias().get_settings_path("real-time/checks"));
 
 	settings.alias().add_path_to_settings()
-		("LOG FILE SECTION", "Section for log file checker")
 
-		("real-time", "CONFIGURE REALTIME CHECKING", "A set of options to configure the real time checks")
+		("real-time", "Real-time filtering", "A set of options to configure the real time checks")
 
 		("real-time/checks", sh::fun_values_path(boost::bind(&real_time_thread::add_realtime_filter, thread_, get_settings_proxy(), _1, _2)),
-			"REALTIME FILTERS", "A set of filters to use in real-time mode",
+			"Real-time filters", "A set of filters to use in real-time mode",
 			"REALTIME FILTER DEFENTION", "For more configuration options add a dedicated section"
 			)
 		;
 
 	settings.alias().add_key_to_settings("real-time")
 
-		("enabled", sh::bool_fun_key<bool>(boost::bind(&real_time_thread::set_enabled, thread_, _1), false),
-			"REAL TIME CHECKING", "Spawns a background thread which waits for file changes.")
+		("enabled", sh::bool_fun_key(boost::bind(&real_time_thread::set_enabled, thread_, _1), false),
+			"Real time", "Spawns a background thread which waits for file changes.")
 
 		;
 
 	settings.register_all();
 	settings.notify();
 
-	//filters::filter_config_handler::add_samples(get_settings_proxy(), thread_->filters_path_);
 
+	thread_->filters_.add_samples(get_settings_proxy());
 	if (mode == NSCAPI::normalStart) {
 		if (!thread_->start())
 			NSC_LOG_ERROR_STD("Failed to start collection thread");
@@ -83,7 +85,7 @@ void CheckLogFile::check_logfile(const Plugin::QueryRequestMessage::Request &req
 
 	filter_type filter;
 	filter_helper.add_options("", "", "", filter.get_filter_syntax());
-	filter_helper.add_syntax("${count}/${total} (${problem_list})", filter.get_filter_syntax(), "${column1}", "${column1}", "%(status): Nothing found", "");
+	filter_helper.add_syntax("${count}/${total} (${problem_list})", "${column1}", "${column1}", "%(status): Nothing found", "");
 	filter_helper.get_desc().add_options()
 		//		("regexp", po::value<std::string>(&regexp),					"Lookup a numeric value in the PDH index table")
 		("line-split", po::value<std::string>(&line_split)->default_value("\\n"),
@@ -112,10 +114,10 @@ void CheckLogFile::check_logfile(const Plugin::QueryRequestMessage::Request &req
 	if (file_list.empty())
 		return nscapi::protobuf::functions::set_response_bad(*response, "Need to specify at least one file: file=foo.txt");
 
-	strEx::s::replace(column_split, "\\t", "\t");
-	strEx::s::replace(column_split, "\\n", "\n");
-	strEx::s::replace(line_split, "\\t", "\t");
-	strEx::s::replace(line_split, "\\n", "\n");
+	str::utils::replace(column_split, "\\t", "\t");
+	str::utils::replace(column_split, "\\n", "\n");
+	str::utils::replace(line_split, "\\t", "\t");
+	str::utils::replace(line_split, "\\n", "\n");
 
 	if (!filter_helper.build_filter(filter))
 		return;
@@ -126,7 +128,7 @@ void CheckLogFile::check_logfile(const Plugin::QueryRequestMessage::Request &req
 			std::string line;
 			while (file.good()) {
 				std::getline(file, line, '\n');
-				std::list<std::string> chunks = strEx::s::splitEx(line, column_split);
+				std::list<std::string> chunks = str::utils::split_lst(line, column_split);
 				boost::shared_ptr<logfile_filter::filter_obj> record(new logfile_filter::filter_obj(filename, line, chunks));
 				filter.match(record);
 			}

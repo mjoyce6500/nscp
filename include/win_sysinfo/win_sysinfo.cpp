@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <windows.h>
@@ -20,8 +23,10 @@
 #include <win_sysinfo/win_sysinfo.hpp>
 
 #include <boost/scoped_array.hpp>
-#include <error.hpp>
+#include <error/error.hpp>
+#include <nsclient/nsclient_exception.hpp>
 #include <buffer.hpp>
+#include <utf8.hpp>
 
 namespace windows {
 #define STATUS_SUCCESS                          ((NTSTATUS)0x00000000L)
@@ -57,24 +62,24 @@ namespace windows {
 
 		BOOL WTSQueryUserToken(ULONG   SessionId, PHANDLE phToken) {
 			if (pWTSQueryUserToken == NULL) {
-				HMODULE hMod = ::LoadLibrary(_TEXT("Wtsapi32.dll"));
+				HMODULE hMod = ::LoadLibrary(L"Wtsapi32.dll");
 				if (hMod == NULL)
-					throw nscp_exception("Failed to load: Wtsapi32: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: Wtsapi32: " + error::lookup::last_error());
 				pWTSQueryUserToken = reinterpret_cast<tWTSQueryUserToken>(GetProcAddress(hMod, "WTSQueryUserToken"));
 				if (pWTSQueryUserToken == NULL)
-					throw nscp_exception("Failed to load: WTSQueryUserToken: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: WTSQueryUserToken: " + error::lookup::last_error());
 			}
 			return pWTSQueryUserToken(SessionId, phToken);
 		}
 
 		DWORD WTSGetActiveConsoleSessionId() {
 			if (pWTSGetActiveConsoleSessionId == NULL) {
-				HMODULE hMod = ::LoadLibrary(_TEXT("Kernel32.dll"));
+				HMODULE hMod = ::LoadLibrary(L"Kernel32.dll");
 				if (hMod == NULL)
-					throw nscp_exception("Failed to load: Kernel32: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: Kernel32: " + error::lookup::last_error());
 				pWTSGetActiveConsoleSessionId = reinterpret_cast<tWTSGetActiveConsoleSessionId>(GetProcAddress(hMod, "WTSGetActiveConsoleSessionId"));
 				if (pWTSGetActiveConsoleSessionId == NULL)
-					throw nscp_exception("Failed to load: WTSGetActiveConsoleSessionId: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: WTSGetActiveConsoleSessionId: " + error::lookup::last_error());
 			}
 			return pWTSGetActiveConsoleSessionId();
 		}
@@ -82,41 +87,41 @@ namespace windows {
 
 		BOOL EnumServicesStatusEx(SC_HANDLE hSCManager, SC_ENUM_TYPE InfoLevel, DWORD dwServiceType, DWORD dwServiceState, LPBYTE lpServices, DWORD cbBufSize, LPDWORD pcbBytesNeeded, LPDWORD lpServicesReturned, LPDWORD lpResumeHandle, LPCTSTR pszGroupName) {
 			if (pEnumServicesStatusEx == NULL) {
-				HMODULE hMod = ::LoadLibrary(_TEXT("Advapi32.dll"));
+				HMODULE hMod = ::LoadLibrary(L"Advapi32.dll");
 				if (hMod == NULL)
-					throw nscp_exception("Failed to load: Advapi32: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: Advapi32: " + error::lookup::last_error());
 				pEnumServicesStatusEx = reinterpret_cast<tEnumServicesStatusEx>(GetProcAddress(hMod, "EnumServicesStatusExW"));
 				if (pEnumServicesStatusEx == NULL)
-					throw nscp_exception("Failed to load: EnumServicesStatusEx: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: EnumServicesStatusEx: " + error::lookup::last_error());
 			}
 			return pEnumServicesStatusEx(hSCManager, InfoLevel, dwServiceType, dwServiceState, lpServices, cbBufSize, pcbBytesNeeded, lpServicesReturned, lpResumeHandle, pszGroupName);
 		}
 		BOOL QueryServiceConfig2(SC_HANDLE hService, DWORD dwInfoLevel, LPBYTE lpBuffer, DWORD cbBufSize, LPDWORD pcbBytesNeeded) {
 			if (pQueryServiceConfig2 == NULL) {
-				HMODULE hMod = ::LoadLibrary(_TEXT("Advapi32.dll"));
+				HMODULE hMod = ::LoadLibrary(L"Advapi32.dll");
 				if (hMod == NULL)
-					throw nscp_exception("Failed to load: Advapi32: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: Advapi32: " + error::lookup::last_error());
 				pQueryServiceConfig2 = reinterpret_cast<tQueryServiceConfig2>(GetProcAddress(hMod, "QueryServiceConfig2W"));
 				if (pQueryServiceConfig2 == NULL)
-					throw nscp_exception("Failed to load: QueryServiceConfig2: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: QueryServiceConfig2: " + error::lookup::last_error());
 			}
 			return pQueryServiceConfig2(hService, dwInfoLevel, lpBuffer, cbBufSize, pcbBytesNeeded);
 		}
 		BOOL QueryServiceStatusEx(SC_HANDLE hService, SC_STATUS_TYPE InfoLevel, LPBYTE lpBuffer, DWORD cbBufSize, LPDWORD pcbBytesNeeded) {
 			if (pQueryServiceStatusEx == NULL) {
-				HMODULE hMod = ::LoadLibrary(_TEXT("Advapi32.dll"));
+				HMODULE hMod = ::LoadLibrary(L"Advapi32.dll");
 				if (hMod == NULL)
-					throw nscp_exception("Failed to load: Advapi32: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: Advapi32: " + error::lookup::last_error());
 				pQueryServiceStatusEx = reinterpret_cast<tQueryServiceStatusEx>(GetProcAddress(hMod, "QueryServiceStatusEx"));
 				if (pQueryServiceStatusEx == NULL)
-					throw nscp_exception("Failed to load: QueryServiceStatusEx: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Failed to load: QueryServiceStatusEx: " + error::lookup::last_error());
 			}
 			return pQueryServiceStatusEx(hService, InfoLevel, lpBuffer, cbBufSize, pcbBytesNeeded);
 		}
 
 		bool IsWow64(HANDLE hProcess, bool def) {
 			if (pIsWow64Process == NULL)
-				pIsWow64Process = reinterpret_cast<tIsWow64Process>(GetProcAddress(GetModuleHandle(TEXT("kernel32")), "IsWow64Process"));
+				pIsWow64Process = reinterpret_cast<tIsWow64Process>(GetProcAddress(GetModuleHandle(L"kernel32"), "IsWow64Process"));
 			if (pIsWow64Process == NULL)
 				return def;
 			BOOL bIsWow64 = FALSE;
@@ -129,29 +134,29 @@ namespace windows {
 			if (pGetProcessImageFileName == NULL)
 				pGetProcessImageFileName = reinterpret_cast<tGetProcessImageFileName>(GetProcAddress(GetModuleHandleA("PSAPI"), "GetProcessImageFileNameW"));
 			if (pGetProcessImageFileName == NULL)
-				throw nscp_exception("Failed to load GetProcessImageFileName: " + error::lookup::last_error());
+				throw nsclient::nsclient_exception("Failed to load GetProcessImageFileName: " + error::lookup::last_error());
 			return pGetProcessImageFileName(hProcess, lpImageFileName, nSize);
 		}
 		LONG NtQueryInformationProcess(HANDLE ProcessHandle, DWORD ProcessInformationClass, PVOID ProcessInformation, DWORD ProcessInformationLength, PDWORD ReturnLength) {
 			if (pNtQueryInformationProcess == NULL)
 				pNtQueryInformationProcess = reinterpret_cast<tNtQueryInformationProcess>(GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess"));
 			if (pNtQueryInformationProcess == NULL)
-				throw nscp_exception("Failed to load NtQueryInformationProcess");
+				throw nsclient::nsclient_exception("Failed to load NtQueryInformationProcess");
 			return pNtQueryInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, ReturnLength);
 		}
 		INT VDMEnumTaskWOWEx(DWORD dwProcessId, tTASKENUMPROCEX fp, LPARAM lparam) {
 			if (pVDMEnumTaskWOWEx == NULL)
 				pVDMEnumTaskWOWEx = reinterpret_cast<tVDMEnumTaskWOWEx>(GetProcAddress(GetModuleHandleA("VDMDBG"), "VDMEnumTaskWOWEx"));
 			if (pVDMEnumTaskWOWEx == NULL)
-				throw nscp_exception("Failed to load NtQueryInformationProcess");
+				throw nsclient::nsclient_exception("Failed to load NtQueryInformationProcess");
 			return pVDMEnumTaskWOWEx(dwProcessId, fp, lparam);
 		}
 
 		LONG NtQuerySystemInformation(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength) {
 			if (pNtQuerySystemInformation == NULL)
-				pNtQuerySystemInformation = reinterpret_cast<tNtQuerySystemInformation>(GetProcAddress(LoadLibrary(_T("Ntdll")), "NtQuerySystemInformation"));
+				pNtQuerySystemInformation = reinterpret_cast<tNtQuerySystemInformation>(GetProcAddress(LoadLibrary(L"Ntdll"), "NtQuerySystemInformation"));
 			if (pNtQuerySystemInformation == NULL)
-				throw nscp_exception("Failed to load: NtQuerySystemInformation: " + error::lookup::last_error());
+				throw nsclient::nsclient_exception("Failed to load: NtQuerySystemInformation: " + error::lookup::last_error());
 			return pNtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength, ReturnLength);
 		}
 	}
@@ -296,7 +301,7 @@ namespace windows {
 		else if (majorVersion == 6 && minorVersion == 3)
 			return "Windows 8.1";
 		else if (majorVersion == 10 && minorVersion == 0 && type != VER_NT_WORKSTATION)
-			return "Windows Server 2016 Technical Preview";
+			return "Windows Server 2016";
 		else if (majorVersion == 10 && minorVersion == 0)
 			return "Windows 10";
 		else if (type != VER_NT_WORKSTATION)
@@ -304,6 +309,47 @@ namespace windows {
 		else
 			return "Post Windows 10";
 	}
+	std::vector<std::string> system_info::get_suite_list() {
+		if (!g_hasVersion) {
+			GetVersion();
+			g_hasVersion = true;
+		}
+		std::vector<std::string> ret;
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_BACKOFFICE) == VER_SUITE_BACKOFFICE)
+			ret.push_back("Microsoft BackOffice");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_BLADE) == VER_SUITE_BLADE)
+			ret.push_back("Web Edition");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_COMPUTE_SERVER) == VER_SUITE_COMPUTE_SERVER)
+			ret.push_back("Compute Cluster Edition");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_DATACENTER) == VER_SUITE_DATACENTER)
+			ret.push_back("Datacenter Edition");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_ENTERPRISE) == VER_SUITE_ENTERPRISE)
+			ret.push_back("Enterprise Edition");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_EMBEDDEDNT) == VER_SUITE_EMBEDDEDNT)
+			ret.push_back("Embedded");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_PERSONAL) == VER_SUITE_PERSONAL)
+			ret.push_back("Home Edition");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_SINGLEUSERTS) == VER_SUITE_SINGLEUSERTS)
+			ret.push_back("Remote Desktop Support");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_SMALLBUSINESS) == VER_SUITE_SMALLBUSINESS)
+			ret.push_back("Small Business Server");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_STORAGE_SERVER) == VER_SUITE_STORAGE_SERVER)
+			ret.push_back("Storage Server");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_TERMINAL) == VER_SUITE_TERMINAL)
+			ret.push_back("Terminal Services");
+		if ((g_versionInfo.wSuiteMask&VER_SUITE_WH_SERVER) == VER_SUITE_WH_SERVER)
+			ret.push_back("Home Server");
+		return ret;
+	}
+
+	long long system_info::get_suite_i() {
+		if (!g_hasVersion) {
+			GetVersion();
+			g_hasVersion = true;
+		}
+		return g_versionInfo.wSuiteMask;
+	}
+
 
 	long system_info::get_numberOfProcessorscores() {
 		if (!g_hasBasicInfo) {
@@ -320,10 +366,10 @@ namespace windows {
 		if (r == 0)
 			return buffer;
 		if (r == STATUS_INFO_LENGTH_MISMATCH)
-			return get_system_process_information(bufferSize + 4000);
+			return get_system_process_information(bufferSize * 10);
 		if (r == STATUS_ACCESS_VIOLATION)
-			throw nscp_exception("Access violation");
-		throw nscp_exception("Failed to enumerate processes: unknown error");
+			throw nsclient::nsclient_exception("Access violation");
+		throw nsclient::nsclient_exception("Failed to enumerate processes: unknown error");
 	}
 
 	system_info::cpu_load system_info::get_cpu_load() {
@@ -334,7 +380,7 @@ namespace windows {
 
 		boost::scoped_array<winapi::SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> buffer(new winapi::SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION[cores]);
 		if (winapi::NtQuerySystemInformation(winapi::SystemProcessorPerformanceInformation, &buffer[0], sizeof(winapi::SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION) * cores, NULL) != 0) {
-			throw nscp_exception("Whoops");
+			throw nsclient::nsclient_exception("Whoops");
 		}
 
 		cpu_load result;
@@ -377,7 +423,7 @@ namespace windows {
 	class CheckMemory {
 	public:
 		CheckMemory() : hKernel32(NULL), FEGlobalMemoryStatusEx(NULL), FEGlobalMemoryStatus(NULL) {
-			hKernel32 = ::LoadLibrary(_TEXT("Kernel32"));
+			hKernel32 = ::LoadLibrary(L"Kernel32");
 			if (hKernel32) {
 				FEGlobalMemoryStatusEx = (PFGlobalMemoryStatusEx)::GetProcAddress(hKernel32, "GlobalMemoryStatusEx");
 				FEGlobalMemoryStatus = (PFGlobalMemoryStatus)::GetProcAddress(hKernel32, "GlobalMemoryStatus");
@@ -393,7 +439,7 @@ namespace windows {
 				MEMORYSTATUSEX buffer;
 				buffer.dwLength = sizeof(buffer);
 				if (!FEGlobalMemoryStatusEx(&buffer))
-					throw nscp_exception("GlobalMemoryStatusEx failed: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("GlobalMemoryStatusEx failed: " + error::lookup::last_error());
 				ret.physical.total = buffer.ullTotalPhys;
 				ret.physical.avail = buffer.ullAvailPhys;
 				ret.virtual_memory.total = buffer.ullTotalVirtual;
@@ -405,7 +451,7 @@ namespace windows {
 				MEMORYSTATUS buffer;
 				buffer.dwLength = sizeof(buffer);
 				if (!FEGlobalMemoryStatus(&buffer))
-					throw nscp_exception("GlobalMemoryStatus failed: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("GlobalMemoryStatus failed: " + error::lookup::last_error());
 				ret.physical.total = buffer.dwTotalPhys;
 				ret.physical.avail = buffer.dwAvailPhys;
 				ret.virtual_memory.total = buffer.dwTotalVirtual;
@@ -414,7 +460,7 @@ namespace windows {
 				ret.pagefile.avail = buffer.dwAvailPageFile;
 				return ret;
 			} else {
-				throw nscp_exception("Failed to check memory: No method found");
+				throw nsclient::nsclient_exception("Failed to check memory: No method found");
 			}
 		}
 	private:
@@ -444,7 +490,7 @@ namespace windows {
 			status = windows::winapi::NtQuerySystemInformation(windows::winapi::SystemPageFileInformation, buffer, buffer.size(), &retLen);
 		}
 		if (status != STATUS_SUCCESS)
-			throw nscp_exception("Failed to get pagefile info");
+			throw nsclient::nsclient_exception("Failed to get pagefile info");
 		if (retLen == 0) {
 			return ret;
 		}

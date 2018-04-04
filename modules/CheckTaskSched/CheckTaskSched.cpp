@@ -1,31 +1,30 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <boost/program_options.hpp>
 
 #include "CheckTaskSched.h"
-#include <strEx.h>
-#include <time.h>
-#include <map>
-#include <vector>
 
-#include <strEx.h>
+
 #include "TaskSched.h"
-
 #include "filter.hpp"
+
+#include <str/utils.hpp>
 
 #include <parsers/filter/cli_helper.hpp>
 
@@ -33,6 +32,11 @@
 #include <nscapi/nscapi_protobuf_functions.hpp>
 #include <nscapi/nscapi_settings_helper.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
+
+#include <boost/program_options.hpp>
+
+#include <map>
+#include <vector>
 
 namespace sh = nscapi::settings_helper;
 namespace po = boost::program_options;
@@ -128,11 +132,11 @@ void CheckTaskSched::check_tasksched(const Plugin::QueryRequestMessage::Request 
 	std::vector<std::string> file_list;
 	std::string files_string;
 	std::string computer, user, domain, password, folder;
-	bool recursive = true, old = false;
+	bool recursive = true, old = false, hidden = false;
 
 	filter_type filter;
 	filter_helper.add_options("exit_code != 0", "exit_code < 0", "enabled = 1", filter.get_filter_syntax(), "warning");
-	filter_helper.add_syntax("${status}: ${problem_list}", filter.get_filter_syntax(), "${folder}/${title}: ${exit_code} != 0", "${title}", "%(status): No tasks found", "%(status): All tasks are ok");
+	filter_helper.add_syntax("${status}: ${problem_list}", "${folder}/${title}: ${exit_code} != 0", "${title}", "%(status): No tasks found", "%(status): All tasks are ok");
 	filter_helper.get_desc().add_options()
 		("force-old", po::bool_switch(&old), "The name of the computer that you want to connect to.")
 		("computer", po::value<std::string>(&computer), "The name of the computer that you want to connect to.")
@@ -141,6 +145,7 @@ void CheckTaskSched::check_tasksched(const Plugin::QueryRequestMessage::Request 
 		("password", po::value<std::string>(&password), "The password that is used to connect to the computer. If the user name and password are not specified, then the current token is used.")
 		("folder", po::value<std::string>(&folder), "The folder in which the tasks to check reside.")
 		("recursive", po::value<bool>(&recursive), "Recurse sub folder (defaults to true).")
+		("hidden", po::value<bool>(&hidden), "Look for hidden tasks.")
 		;
 
 	if (!filter_helper.parse_options())
@@ -151,9 +156,9 @@ void CheckTaskSched::check_tasksched(const Plugin::QueryRequestMessage::Request 
 
 	try {
 		TaskSched query;
-		query.findAll(filter, computer, user, domain, password, folder, recursive, old);
+		query.findAll(filter, computer, user, domain, password, folder, recursive, hidden, old);
 		filter_helper.post_process(filter);
-	} catch (const nscp_exception &e) {
+	} catch (const nsclient::nsclient_exception &e) {
 		return nscapi::protobuf::functions::set_response_bad(*response, "Failed to fetch tasks: " + e.reason());
 	}
 }

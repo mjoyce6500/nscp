@@ -1,20 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
+
+#include <str/xtos.hpp>
 
 #include <string>
 #include <map>
@@ -134,7 +139,7 @@ namespace http {
 
 		}
 		void set_http_response(std::string version, std::string code) {
-			status_code_ = strEx::s::stox<int>(code);
+			status_code_ = str::stox<int>(code);
 		}
 		void add_header(std::string key, std::string value) {
 			headers_[key] = value;
@@ -218,13 +223,13 @@ namespace http {
 				data += "=";
 				data += uri_encode(v.second);
 			}
-			add_header("Content-Length", strEx::s::xtos(data.size()));
+			add_header("Content-Length", str::xtos(data.size()));
 			add_header("Content-Type", "application/x-www-form-urlencoded");
 			verb_ = "POST";
 			payload_ = data;
 		}
 		void add_post_payload(const std::string &content_type, const std::string &payload_data) {
-			add_header("Content-Length", strEx::s::xtos(payload_data.size()));
+			add_header("Content-Length", str::xtos(payload_data.size()));
 			add_header("Content-Type", content_type);
 			verb_ = "POST";
 			payload_ = payload_data;

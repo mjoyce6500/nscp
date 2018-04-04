@@ -1,23 +1,26 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
 #include <utils.h>
-#include <strEx.h>
+#include <str/xtos.hpp>
 
 #include <socket/client.hpp>
 
@@ -37,8 +40,9 @@ namespace graphite_handler {
 			set_property_bool("send perfdata", true);
 			set_property_bool("send status", true);
 			set_property_int("timeout", 30);
-			set_property_string("perf path", "system.${hostname}.${check_alias}.${perf_alias}");
-			set_property_string("status path", "system.${hostname}.${check_alias}.status");
+			set_property_string("perf path", "nsclient.${hostname}.${check_alias}.${perf_alias}");
+			set_property_string("status path", "nsclient.${hostname}.${check_alias}.status");
+			set_property_string("metric path", "nsclient.${hostname}.${metric}");
 		}
 		graphite_target_object(const nscapi::settings_objects::object_instance other, std::string alias, std::string path) : parent(other, alias, path) {}
 
@@ -55,32 +59,35 @@ namespace graphite_handler {
 
 				root_path.add_key()
 
-					("path", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "perf path", _1), "system.${hostname}.${check_alias}.${perf_alias}"),
+					("path", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "perf path", _1), "nsclient.${hostname}.${check_alias}.${perf_alias}"),
 						"PATH FOR METRICS", "Path mapping for metrics")
 
-					("status path", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "status path", _1), "system.${hostname}.${check_alias}.status"),
+					("status path", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "status path", _1), "nsclient.${hostname}.${check_alias}.status"),
 						"PATH FOR STATUS", "Path mapping for status")
 
-					("send perfdata", sh::bool_fun_key<bool>(boost::bind(&parent::set_property_bool, this, "send perfdata", _1), true),
+					("send perfdata", sh::bool_fun_key(boost::bind(&parent::set_property_bool, this, "send perfdata", _1), true),
 						"SEND PERF DATA", "Send performance data to this server")
 
-					("send status", sh::bool_fun_key<bool>(boost::bind(&parent::set_property_bool, this, "send status", _1), true),
+					("send status", sh::bool_fun_key(boost::bind(&parent::set_property_bool, this, "send status", _1), true),
 						"SEND STATUS", "Send status data to this server")
+
+					("metric path", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "metric path", _1), "nsclient.${hostname}.${metric}"),
+					"PATH FOR METRICS", "Path mapping for metrics")
 
 					;
 			} else {
 				root_path.add_key()
 
-					("path", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "perf path", _1)),
+					("path", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "perf path", _1)),
 						"PATH FOR METRICS", "Path mapping for metrics")
 
-					("status path", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "status path", _1)),
+					("status path", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "status path", _1)),
 						"PATH FOR STATUS", "Path mapping for status")
 
-					("send perfdata", sh::bool_fun_key<bool>(boost::bind(&parent::set_property_bool, this, "send perfdata", _1)),
+					("send perfdata", sh::bool_fun_key(boost::bind(&parent::set_property_bool, this, "send perfdata", _1)),
 						"SEND PERF DATA", "Send performance data to this server")
 
-					("send status", sh::bool_fun_key<bool>(boost::bind(&parent::set_property_bool, this, "send status", _1)),
+					("send status", sh::bool_fun_key(boost::bind(&parent::set_property_bool, this, "send status", _1)),
 						"SEND STATUS", "Send status data to this server")
 
 					;

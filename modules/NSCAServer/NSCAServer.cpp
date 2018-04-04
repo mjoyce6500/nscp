@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "NSCAServer.h"
 
@@ -50,10 +53,10 @@ bool NSCAServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 		("payload length", sh::uint_key(&payload_length_, 512),
 			"PAYLOAD LENGTH", "Length of payload to/from the NSCA agent. This is a hard specific value so you have to \"configure\" (read recompile) your NSCA agent to use the same value for it to work.")
 
-		("performance data", sh::bool_fun_key<bool>(boost::bind(&NSCAServer::set_perf_data, this, _1), true),
+		("performance data", sh::bool_fun_key(boost::bind(&NSCAServer::set_perf_data, this, _1), true),
 			"PERFORMANCE DATA", "Send performance data back to nagios (set this to false to remove all performance data).")
 
-		("encryption", sh::string_fun_key<std::string>(boost::bind(&NSCAServer::set_encryption, this, _1), "aes"),
+		("encryption", sh::string_fun_key(boost::bind(&NSCAServer::set_encryption, this, _1), "aes"),
 			"ENCRYPTION", std::string("Name of encryption algorithm to use.\nHas to be the same as your agent i using or it wont work at all."
 				"This is also independent of SSL and generally used instead of SSL.\nAvailable encryption algorithms are:\n") + nscp::encryption::helpers::get_crypto_string("\n"))
 
@@ -82,7 +85,7 @@ bool NSCAServer::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode) {
 	}
 #endif
 	if (payload_length_ != 512)
-		NSC_DEBUG_MSG_STD("Non-standard buffer length (hope you have recompiled check_nsca changing #define MAX_PACKETBUFFER_LENGTH = " + strEx::s::xtos(payload_length_));
+		NSC_DEBUG_MSG_STD("Non-standard buffer length (hope you have recompiled check_nsca changing #define MAX_PACKETBUFFER_LENGTH = " + str::xtos(payload_length_));
 	NSC_LOG_ERROR_LISTS(info_.validate());
 
 	std::list<std::string> errors;

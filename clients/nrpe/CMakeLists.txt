@@ -15,6 +15,7 @@ SET(SRCS ${SRCS}
 	${NSCP_INCLUDEDIR}/socket/socket_helpers.cpp
 
 	${NSCP_INCLUDEDIR}/utils.cpp
+  ${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_helper.cpp
 	${NSCP_CLIENT_CPP}
 	
 	../../resources/nsclient.ico
@@ -39,6 +40,7 @@ IF(WIN32)
 		${NSCP_INCLUDEDIR}/swap_bytes.hpp
 		${NSCP_INCLUDEDIR}/socket/socket_helpers.hpp
 		${NSCP_INCLUDEDIR}/socket/client.hpp
+    ${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_helper.hpp
 		${NSCP_INCLUDEDIR}/utils.h
 		${NSCP_CLIENT_HPP}
 	)
@@ -54,7 +56,15 @@ ELSE(JSON_SPIRIT_FOUND)
 ENDIF(JSON_SPIRIT_FOUND)
 LINK_DIRECTORIES(${BOOST_LIB_DIRS})
 
-SETUP_BREAKPAD(SRCS)
+IF(BREAKPAD_FOUND)
+	IF(WIN32)
+		SET(${_SRC} ${${_SRC}} ${NSCP_INCLUDEDIR}/breakpad/exception_handler_win32.cpp)
+		SET(${_SRC} ${${_SRC}} ${NSCP_INCLUDEDIR}/breakpad/exception_handler_win32.hpp)
+	ENDIF(WIN32)
+	ADD_DEFINITIONS(-DUSE_BREAKPAD)
+	INCLUDE_DIRECTORIES(${BREAKPAD_INCLUDE_DIR})
+	SET(EXTRA_LIBS ${EXTRA_LIBS} ${BREAKPAD_COMMON_LIBRARY} ${BREAKPAD_LIBRARY})
+ENDIF(BREAKPAD_FOUND)
 
 NSCP_MAKE_EXE_BIN(${TARGET} "${SRCS}")
 

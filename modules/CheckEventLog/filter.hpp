@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -28,8 +31,8 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/noncopyable.hpp>
 
-#include <error.hpp>
-#include <format.hpp>
+#include <error/error.hpp>
+#include <str/format.hpp>
 
 #include <parsers/where.hpp>
 #include <parsers/where/node.hpp>
@@ -52,7 +55,7 @@ namespace eventlog_filter {
 		virtual ~filter_obj() {}
 
 		virtual long long get_id() const = 0;
-		virtual std::string get_source() const = 0;
+		virtual std::string get_provider() const = 0;
 		virtual std::string get_guid() const = 0;
 		virtual std::string get_computer() const = 0;
 		virtual long long get_el_type() const = 0;
@@ -60,7 +63,9 @@ namespace eventlog_filter {
 		virtual std::string get_keyword() = 0;
 		virtual std::string get_el_type_s() const = 0;
 		virtual long long get_severity() const = 0;
+		virtual void set_truncate(int truncate) = 0;
 		virtual std::string get_message() = 0;
+		virtual std::string get_xml() = 0;
 		virtual std::string get_strings() = 0;
 		virtual std::string get_log() const = 0;
 		virtual long long get_written() const = 0;
@@ -72,14 +77,15 @@ namespace eventlog_filter {
 		virtual bool is_modern() const = 0;
 		virtual std::string get_written_s() const {
 			unsigned long long time = get_written();
-			return format::itos_as_time((now_-time)*1000);
+			return str::format::itos_as_time((now_ - time) * 1000);
 		}
+		virtual std::string get_written_hs() const;
 		virtual std::string to_string() const = 0;
 	};
 
 	struct old_filter_obj : filter_obj {
 		EventLogRecord record;
-		const int truncate_message;
+		int truncate_message;
 
 		old_filter_obj(unsigned long long now, std::string file, const EVENTLOGRECORD *pevlr, const int truncate_message)
 			: filter_obj(now)
@@ -89,7 +95,7 @@ namespace eventlog_filter {
 		long long get_id() const {
 			return record.eventID();
 		}
-		std::string get_source() const {
+		std::string get_provider() const {
 			return utf8::cvt<std::string>(record.get_source());
 		}
 		std::string get_computer() const {
@@ -108,8 +114,14 @@ namespace eventlog_filter {
 		long long get_severity() const {
 			return record.severity();
 		}
+		void set_truncate(int truncate) {
+			truncate_message = truncate;
+		}
 		std::string get_message() {
 			return utf8::cvt<std::string>(record.render_message(truncate_message));
+		}
+		std::string get_xml() {
+			return "";
 		}
 		std::string get_strings() {
 			return utf8::cvt<std::string>(record.enumStrings());
@@ -141,7 +153,7 @@ namespace eventlog_filter {
 		bool is_modern() const { return false; }
 		
 		virtual std::string to_string() const { 
-			return get_log() + ":" + strEx::s::xtos(get_id()) + "=" + get_el_type_s();
+			return get_log() + ":" + str::xtos(get_id()) + "=" + get_el_type_s();
 		}
 
 	};
@@ -150,8 +162,8 @@ namespace eventlog_filter {
 		const std::string logfile;
 		eventlog::evt_handle hEvent;
 		hlp::buffer<wchar_t, eventlog::api::PEVT_VARIANT> buffer;
-		const int truncate_message;
-		eventlog::evt_handle hProviderMetadataHandle;
+		int truncate_message;
+		std::map<std::string, eventlog::evt_handle> providers_;
 
 		new_filter_obj(unsigned long long now, const std::string &logfile, eventlog::api::EVT_HANDLE hEvent, eventlog::evt_handle &hContext, const int truncate_message);
 		virtual ~new_filter_obj() {}
@@ -159,7 +171,7 @@ namespace eventlog_filter {
 		long long get_id() const {
 			return buffer.get()[eventlog::api::EvtSystemEventID].UInt16Val;
 		}
-		std::string get_source() const;
+		std::string get_provider() const;
 		std::string get_guid() const;
 		std::string get_computer() const;
 		long long get_el_type() const;
@@ -170,6 +182,10 @@ namespace eventlog_filter {
 			return 0;
 		}
 		std::string get_message();
+		std::string get_xml();
+		void set_truncate(int truncate) {
+			truncate_message = truncate;
+		}
 		std::string get_strings() {
 			return get_message();
 		}
@@ -189,8 +205,8 @@ namespace eventlog_filter {
 			return 0;
 		}
 		bool is_modern() const { return true; }
-		eventlog::evt_handle& get_provider_handle();
-		virtual std::string to_string() const { return logfile + ":" + strEx::s::xtos(get_id()) + "=" + get_el_type_s(); }
+		eventlog::evt_handle& get_provider_handle(const std::string provider);
+		virtual std::string to_string() const { return logfile + ":" + str::xtos(get_id()) + "=" + get_el_type_s(); }
 	};
 
 	typedef parsers::where::filter_handler_impl<boost::shared_ptr<filter_obj> > native_context;

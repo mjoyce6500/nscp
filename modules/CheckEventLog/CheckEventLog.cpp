@@ -1,18 +1,23 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+#include <nsclient/nsclient_exception.hpp>
 
 #include <boost/foreach.hpp>
 #include <boost/program_options.hpp>
@@ -20,7 +25,7 @@
 #include "CheckEventLog.h"
 
 #include <time.h>
-#include <error.hpp>
+#include <error/error.hpp>
 #include <map>
 #include <vector>
 #include <winevt.h>
@@ -70,12 +75,12 @@ bool CheckEventLog::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode)
 	thread_->set_path(settings.alias().get_settings_path("real-time/filters"));
 
 	settings.alias().add_path_to_settings()
-		("EVENT LOG SECTION", "Section for the EventLog Checker (CheckEventLog.dll).")
+		("Eventlog configuration", "Section for the EventLog Checker (CheckEventLog.dll).")
 
-		("real-time", "CONFIGURE REALTIME CHECKING", "A set of options to configure the real time checks")
+		("real-time", "Real-time monitoring", "A set of options to configure the real time checks")
 
 		("real-time/filters", sh::fun_values_path(boost::bind(&real_time_thread::add_realtime_filter, thread_, get_settings_proxy(), _1, _2)),
-			"REALTIME FILTERS", "A set of filters to use in real-time mode",
+			"Real-time filters", "A set of filters to use in real-time mode",
 			"FILTER DEFENITION", "For more configuration options add a dedicated section")
 		;
 
@@ -96,10 +101,10 @@ bool CheckEventLog::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode)
 
 	settings.alias().add_key_to_settings("real-time")
 
-		("enabled", sh::bool_fun_key<bool>(boost::bind(&real_time_thread::set_enabled, thread_, _1), false),
+		("enabled", sh::bool_fun_key(boost::bind(&real_time_thread::set_enabled, thread_, _1), false),
 			"REAL TIME CHECKING", "Spawns a background thread which detects issues and reports them back instantly.")
 
-		("startup age", sh::string_fun_key<std::string>(boost::bind(&real_time_thread::set_start_age, thread_, _1), "30m"),
+		("startup age", sh::string_fun_key(boost::bind(&real_time_thread::set_start_age, thread_, _1), "30m"),
 			"STARTUP AGE", "The initial age to scan when starting NSClient++")
 
 		("log", sh::string_key(&thread_->logs_, "application,system"),
@@ -118,6 +123,12 @@ bool CheckEventLog::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode)
 	thread_->filters_.add_missing(get_settings_proxy(), "default", "");
 
 	if (mode == NSCAPI::normalStart) {
+
+		nscapi::core_helper core(get_core(), get_id());
+		BOOST_FOREACH(const nscapi::core_helper::storage_map::value_type &e, core.get_storage_strings("eventlog.bookmarks")) {
+			bookmarks_.add(e.first, e.second);
+		}
+
 		if (!thread_->start())
 			NSC_LOG_ERROR_STD("Failed to start collection thread");
 	}
@@ -126,6 +137,11 @@ bool CheckEventLog::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode mode)
 bool CheckEventLog::unloadModule() {
 	if (!thread_->stop())
 		NSC_LOG_ERROR_STD("Failed to start collection thread");
+
+	nscapi::core_helper core(get_core(), get_id());
+ 	BOOST_FOREACH(const bookmarks::map_type::value_type &v, bookmarks_.get_copy()) {
+ 		core.put_storage("eventlog.bookmarks", v.first, v.second, false, false);
+ 	}
 	return true;
 }
 
@@ -164,7 +180,7 @@ void check_legacy(const std::string &logfile, std::string &scan_range, const int
 	eventlog_buffer buffer(4096);
 	HANDLE hLog = OpenEventLog(NULL, utf8::cvt<std::wstring>(logfile).c_str());
 	if (hLog == NULL)
-		throw nscp_exception("Could not open the '" + logfile + "' event log: " + error::lookup::last_error());
+		throw nsclient::nsclient_exception("Could not open the '" + logfile + "' event log: " + error::lookup::last_error());
 	long long stop_date;
 	enum direction_type {
 		direction_none, direction_forwards, direction_backwards
@@ -192,14 +208,14 @@ void check_legacy(const std::string &logfile, std::string &scan_range, const int
 			if (err == ERROR_INSUFFICIENT_BUFFER) {
 				buffer.resize(dwNeeded);
 				if (!ReadEventLog(hLog, flags, 0, buffer.get(), static_cast<DWORD>(buffer.size()), &dwRead, &dwNeeded))
-					throw nscp_exception("Error reading eventlog: " + error::lookup::last_error());
+					throw nsclient::nsclient_exception("Error reading eventlog: " + error::lookup::last_error());
 			} else if (err == ERROR_HANDLE_EOF) {
 				is_scanning = false;
 				break;
 			} else {
 				std::string error_msg = error::lookup::last_error(err);
 				CloseEventLog(hLog);
-				throw nscp_exception("Failed to read from event log: " + error_msg);
+				throw nsclient::nsclient_exception("Failed to read from event log: " + error_msg);
 			}
 		}
 		__time64_t ltime;
@@ -224,7 +240,38 @@ void check_legacy(const std::string &logfile, std::string &scan_range, const int
 	CloseEventLog(hLog);
 }
 
-void check_modern(const std::string &logfile, const std::string &scan_range, const int truncate_message, eventlog_filter::filter &filter) {
+void CheckEventLog::save_bookmark(const std::string bookmark, eventlog::api::EVT_HANDLE &hResults) {
+	if (bookmark.empty()) {
+		return;
+	}
+	eventlog::evt_handle hBookmark = eventlog::EvtCreateBookmark(NULL);
+	if (!hBookmark) {
+		NSC_LOG_ERROR("Failed to create bookmark: " + error::lookup::last_error());
+		return;
+	}
+	if (!EvtUpdateBookmark(hBookmark, hResults)) {
+		NSC_LOG_ERROR("Failed to create bookmark: " + error::lookup::last_error());
+		return;
+	}
+
+	hlp::buffer<wchar_t, LPWSTR> buffer(4096);
+	DWORD dwBufferSize = 0;
+	DWORD dwPropertyCount = 0;
+
+	if (!eventlog::EvtRender(NULL, hBookmark, eventlog::api::EvtRenderBookmark, static_cast<DWORD>(buffer.size()), buffer.get(), &dwBufferSize, &dwPropertyCount)) {
+		DWORD status = GetLastError();
+		if (status == ERROR_INSUFFICIENT_BUFFER) {
+			buffer.resize(dwBufferSize);
+			if (!eventlog::EvtRender(NULL, hBookmark, eventlog::api::EvtRenderBookmark, static_cast<DWORD>(buffer.size()), buffer.get(), &dwBufferSize, &dwPropertyCount)) {
+				NSC_LOG_ERROR("Failed to save bookmark: " + error::lookup::last_error());
+				return;
+			}
+		}
+	}
+	bookmarks_.add(bookmark, utf8::cvt<std::string>(buffer.get()));
+}
+
+void CheckEventLog::check_modern(const std::string &logfile, const std::string &scan_range, const int truncate_message, eventlog_filter::filter &filter, std::string bookmark) {
 	typedef eventlog_filter::filter filter_type;
 	DWORD status = ERROR_SUCCESS;
 	const int batch_size = 10;	// TODO make configurable
@@ -252,17 +299,30 @@ void check_modern(const std::string &logfile, const std::string &scan_range, con
 	if (!hResults) {
 		status = GetLastError();
 		if (status == ERROR_EVT_CHANNEL_NOT_FOUND)
-			throw nscp_exception("Channel " + logfile + " not found: " + error::lookup::last_error(status));
+			throw nsclient::nsclient_exception("Channel " + logfile + " not found: " + error::lookup::last_error(status));
 		else if (status == ERROR_EVT_INVALID_QUERY)
-			throw nscp_exception("Failed to open " + logfile + ": " + error::lookup::last_error(status));
+			throw nsclient::nsclient_exception("Failed to open " + logfile + ": " + error::lookup::last_error(status));
 		else if (status != ERROR_SUCCESS)
-			throw nscp_exception("Failed to open " + logfile + ": " + error::lookup::last_error(status));
+			throw nsclient::nsclient_exception("Failed to open " + logfile + ": " + error::lookup::last_error(status));
 	}
 
 	eventlog::evt_handle hContext = eventlog::EvtCreateRenderContext(0, NULL, eventlog::api::EvtRenderContextSystem);
 	if (!hContext)
-		throw nscp_exception("EvtCreateRenderContext failed: " + error::lookup::last_error());
+		throw nsclient::nsclient_exception("EvtCreateRenderContext failed: " + error::lookup::last_error());
 
+	if (!bookmark.empty()) {
+		bookmarks::op_string xmlBm = bookmarks_.get(bookmark);
+		if (xmlBm) {
+			eventlog::evt_handle hBookmark = eventlog::EvtCreateBookmark(utf8::cvt<std::wstring>(*xmlBm).c_str());
+			if (!hBookmark) {
+				NSC_LOG_ERROR("Failed to create bookmark: " + error::lookup::last_error());
+			} else {
+				if (!eventlog::EvtSeek(hResults, 1, hBookmark, 0, eventlog::api::EvtSeekRelativeToBookmark)) {
+					NSC_LOG_ERROR("Failed to lookup bookmark: " + error::lookup::last_error());
+				}
+			}
+		}
+	}
 	while (true) {
 		DWORD status = ERROR_SUCCESS;
 		hlp::buffer<eventlog::api::EVT_HANDLE> hEvents(batch_size);
@@ -274,26 +334,37 @@ void check_modern(const std::string &logfile, const std::string &scan_range, con
 		while (true) {
 			if (!eventlog::EvtNext(hResults, batch_size, hEvents, 100, 0, &dwReturned)) {
 				status = GetLastError();
-				if (status == ERROR_NO_MORE_ITEMS || status == ERROR_TIMEOUT)
+				if (status == ERROR_NO_MORE_ITEMS || status == ERROR_TIMEOUT) {
+					if (!bookmark.empty()) {
+						NSC_LOG_ERROR("Cannot update bookmarks for empty reads yet");
+						//save_bookmark(bookmark, hResults);
+					}
 					return;
+				}
 				else if (status != ERROR_SUCCESS)
-					throw nscp_exception("EvtNext failed: " + error::lookup::last_error(status));
+					throw nsclient::nsclient_exception("EvtNext failed: " + error::lookup::last_error(status));
 			}
 			for (DWORD i = 0; i < dwReturned; i++) {
 				try {
 					filter_type::object_type item(new eventlog_filter::new_filter_obj(ltime, logfile, hEvents[i], hContext, truncate_message));
 					if (direction == direction_backwards && item->get_written() < stop_date) {
+						if (dwReturned > 0) {
+							save_bookmark(bookmark, hEvents[dwReturned - 1]);
+						}
 						for (; i < dwReturned; i++)
 							eventlog::EvtClose(hEvents[i]);
 						return;
 					}
 					if (direction == direction_forwards && item->get_written() > stop_date) {
+						if (dwReturned > 0) {
+							save_bookmark(bookmark, hEvents[dwReturned - 1]);
+						}
 						for (; i < dwReturned; i++)
 							eventlog::EvtClose(hEvents[i]);
 						return;
 					}
 					modern_filter::match_result ret = filter.match(item);
-				} catch (const nscp_exception &e) {
+				} catch (const nsclient::nsclient_exception &e) {
 					for (; i < dwReturned; i++)
 						eventlog::EvtClose(hEvents[i]);
 					NSC_LOG_ERROR("Failed to describe event: " + e.reason());
@@ -406,6 +477,7 @@ void CheckEventLog::check_eventlog(const Plugin::QueryRequestMessage::Request &r
 	std::string files_string;
 	std::string mode;
 	std::string scan_range;
+	std::string bookmark;
 	bool unique = false;
 	int truncate_message = 0;
 
@@ -417,8 +489,8 @@ void CheckEventLog::check_eventlog(const Plugin::QueryRequestMessage::Request &r
 	filter_helper.add_warn_option("level = 'warning'", "problem_count > 0");
 	filter_helper.add_crit_option("level in ('error', 'critical')");
 	filter_helper.add_options(filter.get_filter_syntax(), "ok");
-	filter_helper.add_index(filter.get_filter_syntax(), "");
-	filter_helper.add_syntax("${status}: ${count} message(s) ${problem_list}", filter.get_filter_syntax(), "${file} ${source} (${message})", "${file}_${source}", "%(status): No entries found", "%(status): Event log seems fine");
+	filter_helper.add_index("");
+	filter_helper.add_syntax("${status}: ${count} message(s) ${problem_list}", "${file} ${source} (${message})", "${file}_${source}", "%(status): No entries found", "%(status): Event log seems fine");
 	filter_helper.get_desc().add_options()
 		("file", po::value<std::vector<std::string> >(&file_list), "File to read (can be specified multiple times to check multiple files.\nNotice that specifying multiple files will create an aggregate set you will not check each file individually."
 			"In other words if one file contains an error the entire check will result in error.")
@@ -426,6 +498,7 @@ void CheckEventLog::check_eventlog(const Plugin::QueryRequestMessage::Request &r
 		("scan-range", po::value<std::string>(&scan_range), "Date range to scan.\nA negative value scans backward (historical events) and a positive value scans forwards (future events). This is the approximate dates to search through this speeds up searching a lot but there is no guarantee messages are ordered.")
 		("truncate-message", po::value<int>(&truncate_message), "Maximum length of message for each event log message text.")
 		("unique", po::value<bool>(&unique)->implicit_value("true"), "Shorthand for setting default unique index: ${log}-${source}-${id}.")
+		("bookmark", po::value<std::string>(&bookmark)->implicit_value("auto"), "Use bookmarks to only look for messages since last check (with the same bookmark name). If you set this to auto or leave it empty the bookmark name will be derived from your logs, filters, warn and crit.")
 		;
 	if (!filter_helper.parse_options())
 		return;
@@ -440,11 +513,30 @@ void CheckEventLog::check_eventlog(const Plugin::QueryRequestMessage::Request &r
 		file_list.push_back("Application");
 		file_list.push_back("System");
 	}
+	std::string bookmark_prefix = "auto,log[", bookmark_suffix;
+	if (bookmark == "auto") {
+		bookmark_suffix += "],filters[";
+		BOOST_FOREACH(const std::string &file, filter_helper.data.filter_string) {
+			bookmark_suffix += "," + file;
+		}
+		bookmark_suffix += "],warn[";
+		BOOST_FOREACH(const std::string &file, filter_helper.data.warn_string) {
+			bookmark_suffix += "," + file;
+		}
+		bookmark_suffix += "],crit[";
+		BOOST_FOREACH(const std::string &file, filter_helper.data.crit_string) {
+			bookmark_suffix += "," + file;
+		}
+		bookmark_suffix += "]";
+	}
 
 	if (!filter_helper.build_filter(filter))
 		return;
 
 	BOOST_FOREACH(const std::string &file, file_list) {
+		if (!bookmark_suffix.empty()) {
+			bookmark = bookmark_prefix + file + bookmark_suffix;
+		}
 		std::string name = file;
 		if (lookup_names_) {
 			name = eventlog_wrapper::find_eventlog_name(name);
@@ -453,7 +545,7 @@ void CheckEventLog::check_eventlog(const Plugin::QueryRequestMessage::Request &r
 			}
 		}
 		if (eventlog::api::supports_modern())
-			check_modern(name, scan_range, truncate_message, filter);
+			check_modern(name, scan_range, truncate_message, filter, bookmark);
 		else
 			check_legacy(name, scan_range, truncate_message, filter);
 	}
@@ -474,8 +566,11 @@ bool CheckEventLog::commandLineExec(const int target_mode, const Plugin::Execute
 	} else if (command == "list-providers" || command == "list") {
 		list_providers(request, response);
 		return true;
+	} else if (command == "add") {
+		add_filter(request, response);
+		return true;
 	} else if (target_mode == NSCAPI::target_module) {
-		nscapi::protobuf::functions::set_response_good(*response, "Usage: nscp eventlog [list|insert] --help");
+		nscapi::protobuf::functions::set_response_good(*response, "Usage: nscp eventlog [list|insert|add] --help");
 		return true;
 	}
 	return false;
@@ -534,9 +629,9 @@ void CheckEventLog::list_providers(const Plugin::ExecuteRequestMessage::Request 
 					else if (ERROR_INSUFFICIENT_BUFFER == status) {
 						buffer.resize(dwBufferSize);
 						if (!eventlog::EvtNextChannelPath(hProviders, buffer.size(), buffer.get(), &dwBufferSize))
-							throw nscp_exception("EvtNextChannelPath failed: " + error::lookup::last_error());
+							throw nsclient::nsclient_exception("EvtNextChannelPath failed: " + error::lookup::last_error());
 					} else if (status != ERROR_SUCCESS)
-						throw nscp_exception("EvtNextChannelPath failed: " + error::lookup::last_error(status));
+						throw nsclient::nsclient_exception("EvtNextChannelPath failed: " + error::lookup::last_error(status));
 				}
 				if (channels || all) {
 					ss << utf8::cvt<std::string>(buffer.get()) << "\n";
@@ -632,9 +727,9 @@ void CheckEventLog::list_providers(const Plugin::ExecuteRequestMessage::Request 
 						else if (ERROR_INSUFFICIENT_BUFFER == status) {
 							buffer.resize(dwBufferSize);
 							if (!eventlog::EvtNextPublisherId(hProviders, buffer.size(), buffer.get(), &dwBufferSize))
-								throw nscp_exception("EvtNextChannelPath failed: " + error::lookup::last_error());
+								throw nsclient::nsclient_exception("EvtNextChannelPath failed: " + error::lookup::last_error());
 						} else if (status != ERROR_SUCCESS)
-							throw nscp_exception("EvtNextChannelPath failed: " + error::lookup::last_error(status));
+							throw nsclient::nsclient_exception("EvtNextChannelPath failed: " + error::lookup::last_error(status));
 					}
 					if (channels || all) {
 						ss << utf8::cvt<std::string>(buffer.get()) << "\n";
@@ -685,6 +780,57 @@ void CheckEventLog::list_providers(const Plugin::ExecuteRequestMessage::Request 
 	}
 }
 
+void CheckEventLog::add_filter(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response) {
+	try {
+		namespace po = boost::program_options;
+		po::variables_map vm;
+		po::options_description desc("Allowed options");
+		bool help = false;
+		std::string alias, filter, target, log;
+		desc.add_options()
+			("help,h", po::bool_switch(&help), "Show help screen")
+			("alias", po::value(&alias), "The alias of the new filter")
+			("filter", po::value(&filter)->default_value("level = 'error'"), "The filter of the new filter to add")
+			("target", po::value(&target)->default_value("log"), "Where messages are sent")
+			("log", po::value(&log)->default_value("application"), "The log file to subscribe to")
+			;
+
+
+		nscapi::program_options::basic_command_line_parser cmd(request);
+		cmd.options(desc);
+		po::parsed_options parsed = cmd.allow_unregistered().run();
+		po::store(parsed, vm);
+		po::notify(vm);
+
+		if (alias.empty())
+			help = true;
+		if (help) {
+			nscapi::protobuf::functions::set_response_good(*response, nscapi::program_options::help(desc));
+			return;
+		}
+
+
+		nscapi::protobuf::functions::settings_query s(get_id());
+		s.set("/settings/eventlog/real-time", "enabled", "true");
+		s.set("/settings/eventlog/real-time/filters/" + alias, "filter", filter);
+		s.set("/settings/eventlog/real-time/filters/" + alias, "target", target);
+		s.set("/settings/eventlog/real-time/filters/" + alias, "log", log);
+		s.set("/modules", "CheckEventLog", "enabled");
+		s.save();
+		get_core()->settings_query(s.request(), s.response());
+		if (!s.validate_response()) {
+			nscapi::protobuf::functions::set_response_bad(*response, s.get_response_error());
+			return;
+		}
+
+		nscapi::protobuf::functions::set_response_good(*response, "FIlter " + alias + " added");
+
+	} catch (const std::exception &e) {
+		NSC_LOG_ERROR_EXR("Failed to parse command line: ", e);
+		return nscapi::protobuf::functions::set_response_bad(*response, "Error");
+	}
+}
+
 void CheckEventLog::insert_eventlog(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response) {
 	try {
 		namespace po = boost::program_options;
@@ -696,8 +842,8 @@ void CheckEventLog::insert_eventlog(const Plugin::ExecuteRequestMessage::Request
 		WORD facility = 0;
 		po::options_description desc("Allowed options");
 		desc.add_options()
-			("help,h", po::bool_switch(), "Show help screen")
-			("source,s", po::wvalue<std::wstring>(&source_name)->default_value(_T("Application Error")), "source to use")
+			("help,h", "Show help screen")
+			("source,s", po::wvalue<std::wstring>(&source_name)->default_value(L"Application Error"), "source to use")
 			("type,t", po::value<std::string>(&type), "Event type")
 			("level,l", po::value<std::string>(&type), "Event level (type)")
 			("facility,f", po::value<WORD>(&facility), "Facility/Qualifier")
@@ -708,9 +854,20 @@ void CheckEventLog::insert_eventlog(const Plugin::ExecuteRequestMessage::Request
 			("arguments,a", po::wvalue<std::vector<std::wstring> >(&strings), "Message arguments (strings)")
 			("id,i", po::value<WORD>(&wEventID), "Event ID")
 			;
+
+
+		nscapi::program_options::basic_command_line_parser cmd(request);
+		cmd.options(desc);
+
+		po::parsed_options parsed = cmd.run();
 		boost::program_options::variables_map vm;
-		if (!nscapi::program_options::process_arguments_from_request(vm, desc, request, *response))
+		po::store(parsed, vm);
+		po::notify(vm);
+
+		if (vm.count("help")) {
+			nscapi::protobuf::functions::set_response_good(*response, nscapi::program_options::help(desc));
 			return;
+		}
 
 		event_source source(source_name);
 		WORD wType = EventLogRecord::translateType(type);

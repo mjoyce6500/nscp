@@ -358,9 +358,9 @@ IF(WIN32)
 	SET(CONFIG_BOOT_CONF_LOCATION		"\${exe-path}/boot.ini" CACHE STRING "Location of boot ini (the file which specified where to load the config)")
 	SET(CONFIG_DEFAULT_CONF_LOCATION	"old" CACHE STRING "Default configuration store")
 	SET(CONFIG_DEFAULT_CONF_INI_BASE	"ini://\${shared-path}/" CACHE STRING "Base location for ini files")
-	SET(CONFIG_MODULE_FOLDER			"\${shared-path}/modules" CACHE STRING "modules folder")
+	SET(CONFIG_MODULE_FOLDER			"\${exe-path}/modules" CACHE STRING "modules folder")
 	SET(CONFIG_WEB_FOLDER				"\${shared-path}/web" CACHE STRING "web folder")
-	SET(CONFIG_SCRIPTS_FOLDER			"\${shared-path}/scripts" CACHE STRING "script folder")
+	SET(CONFIG_SCRIPTS_FOLDER			"\${exe-path}/scripts" CACHE STRING "script folder")
 	SET(CONFIG_CERT_FOLDER				"\${shared-path}/security" CACHE STRING "securoty (certificates) folder")
 	SET(CONFIG_DEFAULT_CACHE_PATH		"\${shared-path}/cache" CACHE STRING "Path for caching stuff")
 	SET(CONFIG_LOG_FOLDER				"\${shared-path}/log" CACHE STRING "Path for log files")
@@ -410,6 +410,23 @@ CONFIGURE_FILE(
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR}/include)
 INCLUDE_DIRECTORIES(${NSCP_LOCAL_INCLUDE_PATH})
 # WHat does this do? INSTALL_FILES(/include FILES ${WCONFIG_H_PATH})
+
+
+IF(WIN32)
+  SET(NSCP_ERROR_CPP
+      ${NSCP_INCLUDEDIR}/error/error_w32.cpp
+  )
+  SET(NSCP_ERROR_HPP
+      ${NSCP_INCLUDEDIR}/error/error_w32.hpp
+      ${NSCP_INCLUDEDIR}/error/error.hpp
+  )
+ELSE()
+  SET(NSCP_ERROR_CPP
+  )
+  SET(NSCP_ERROR_HPP
+      ${NSCP_INCLUDEDIR}/error/error.hpp
+  )
+ENDIF()
 
 #############################################################################
 #
@@ -470,17 +487,6 @@ IF(NETLIB_FOUND)
 	ENDIF()
 ENDIF()
 
-
-MESSAGE(STATUS " - Mongoose")
-SET(OLD_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-SET(BUILD_SHARED_LIBS OFF)
-SET(ENABLE_SSL ON CACHE BOOL "Override SSL support")
-ADD_SUBDIRECTORY("ext/mongoose-cpp")
-SET_TARGET_PROPERTIES(_mongoose PROPERTIES FOLDER "libraries")
-SET(BUILD_SHARED_LIBS ${OLD_BUILD_SHARED_LIBS})
-MESSAGE(STATUS " - Docs")
-ADD_SUBDIRECTORY("ext/docs")
-
 SET(ALL_LIB_NAMES)
 MESSAGE(STATUS "Adding libraries")
 FILE(GLOB ALL_LIB_PROJECTS RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "libs/*/CMakeLists.txt")
@@ -492,6 +498,15 @@ FOREACH(CURRENT_LIB ${ALL_LIB_PROJECTS})
 	SET(ALL_LIB_NAMES ${ALL_LIB_NAMES} ${CURRENT_LIB_NAME})
 ENDFOREACH(CURRENT_LIB ${ALL_LIB_PROJECTS})
 
+SET(ALL_ZIP_MODULES)
+MESSAGE(STATUS "Adding zip-modules")
+FILE(GLOB ALL_ZIP_MODULES RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "scripts/modules/*/CMakeLists.txt")
+FOREACH(CURRENT ${ALL_ZIP_MODULES})
+	GET_FILENAME_COMPONENT(CURRENT_PATH ${CURRENT} PATH)
+	GET_FILENAME_COMPONENT(CURRENT_NAME ${CURRENT_PATH} NAME)
+	MESSAGE(STATUS " + Zip-module: ${CURRENT_PATH} (${CURRENT_NAME})")
+	ADD_SUBDIRECTORY("${CURRENT_PATH}")
+ENDFOREACH(CURRENT ${ALL_ZIP_MODULES})
 
 #############################################################################
 #
@@ -501,17 +516,21 @@ ENDFOREACH(CURRENT_LIB ${ALL_LIB_PROJECTS})
 
 SET(NSCP_DEF_PLUGIN_CPP
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_impl.cpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_helper.cpp
 )
 SET(NSCP_DEF_PLUGIN_HPP
 	${NSCP_INCLUDEDIR}/utf8.hpp
-	${NSCP_INCLUDEDIR}/format.hpp
-	${NSCP_INCLUDEDIR}/strEx.h
+	${NSCP_INCLUDEDIR}/str/format.hpp
+	${NSCP_INCLUDEDIR}/str/utils.hpp
 	${NSCP_INCLUDEDIR}/config.h
-	${NSCP_INCLUDEDIR}/utils.h
 	${NSCP_INCLUDEDIR}/NSCAPI.h
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_helper.hpp
-	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_object.hpp
-	${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_impl.hpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_object.hpp  
+  ${NSCP_INCLUDEDIR}/nscapi/nscapi_common_options.hpp
+  ${NSCP_INCLUDEDIR}/nscapi/nscapi_metrics_helper.hpp
+  ${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_impl.hpp
+  ${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_wrapper.hpp
+  ${NSCP_INCLUDEDIR}/nscapi/nscapi_program_options.hpp
 )
 
 SET(NSCP_FILTER_CPP
@@ -546,7 +565,7 @@ SET(NSCP_DEF_PLUGIN_LIB
 	${Boost_PROGRAM_OPTIONS_LIBRARY}
 	${EXTRA_LIBS}
 	${PROTOBUF_LIBRARY}
-    ${ICONV_LIBRARIES}
+  ${ICONV_LIBRARIES}
 	nscp_protobuf
 	plugin_api
 )
@@ -571,13 +590,18 @@ LOAD_SECTIONS(ALL_CLIENT_NAMES "clients/*/module.cmake" "Clients")
 IF(WIN32)
 	LOAD_SECTIONS(ALL_TOOL_NAMES "tools/*/module.cmake" "Tools")
 ENDIF(WIN32)
-SET_TARGET_PROPERTIES(${MAIN_NSCP_TARGET} ${ALL_CLIENT_NAMES} ${ALL_MODULE_NAMES} ${ALL_TOOL_NAMES} PROPERTIES 
+SET_TARGET_PROPERTIES(nscp ${ALL_CLIENT_NAMES} ${ALL_MODULE_NAMES} ${ALL_TOOL_NAMES} PROPERTIES 
         RUNTIME_OUTPUT_DIRECTORY "${BUILD_TARGET_EXE_PATH}"
 		LIBRARY_OUTPUT_DIRECTORY "${BUILD_TARGET_LIB_PATH}"
         MODULE_OUTPUT_DIRECTORY  "${BUILD_TARGET_LIB_PATH}"
 )
 
 ADD_SUBDIRECTORY("docs")
+
+ADD_CUSTOM_TARGET(nscp_full_config
+	COMMAND ${CMAKE_BINARY_DIR}/nscp settings --settings ini://nsclient-full.ini --add-defaults --load-all --generate
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+	DEPENDS nscp ${ALL_MODULE_NAMES} ${ALL_ZIP_MODULE_NAMES})
 
 IF(WIN32)
 	LOAD_SECTIONS(ALL_INSTALLERS_NAMES "installers/*/CMakeLists.txt" "Installers")
@@ -596,6 +620,7 @@ add_nscp_lua_test(lua_nrpe test_nrpe)
 add_nscp_py_test(python test_python)
 add_nscp_py_test(log_file test_log_file)
 add_nscp_py_test(external_script test_external_script)
+add_nscp_py_test(scheduler test_scheduler)
 IF(WIN32)
 # Disabled as is is not a unit test per see, since it requires extenal non mocked stimula
 #	add_nscp_py_test(eventlog test_eventlog)

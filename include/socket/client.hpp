@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -149,7 +152,7 @@ namespace socket_helpers {
 			virtual void start_read_request(boost::asio::mutable_buffers_1 buffer) = 0;
 
 			virtual void handle_read_request(const boost::system::error_code& e, std::size_t bytes_transferred) {
-				trace("handle_read_request(" + utf8::utf8_from_native(e.message()) + ", " + strEx::s::xtos(bytes_transferred) + ")");
+				trace("handle_read_request(" + utf8::utf8_from_native(e.message()) + ", " + str::xtos(bytes_transferred) + ")");
 				if (!e) {
 					protocol_.on_read(bytes_transferred);
 					do_process();
@@ -169,7 +172,7 @@ namespace socket_helpers {
 			virtual void start_write_request(boost::asio::mutable_buffers_1 buffer) = 0;
 
 			virtual void handle_write_request(const boost::system::error_code& e, std::size_t bytes_transferred) {
-				trace("handle_write_request(" + utf8::utf8_from_native(e.message()) + ", " + strEx::s::xtos(bytes_transferred) + ")");
+				trace("handle_write_request(" + utf8::utf8_from_native(e.message()) + ", " + str::xtos(bytes_transferred) + ")");
 				if (!e) {
 					protocol_.on_write(bytes_transferred);
 					do_process();
@@ -228,14 +231,14 @@ namespace socket_helpers {
 			}
 
 			virtual void start_read_request(boost::asio::mutable_buffers_1 buffer) {
-				this->trace("tcp::start_read_request(" + strEx::s::xtos(boost::asio::buffer_size(buffer)) + ")");
+				this->trace("tcp::start_read_request(" + str::xtos(boost::asio::buffer_size(buffer)) + ")");
 				async_read(socket_, buffer,
 					boost::bind(&connection_type::handle_read_request, this->shared_from_this(), boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred)
 					);
 			}
 
 			virtual void start_write_request(boost::asio::mutable_buffers_1 buffer) {
-				this->trace("tcp::start_write_request(" + strEx::s::xtos(boost::asio::buffer_size(buffer)) + ")");
+				this->trace("tcp::start_write_request(" + str::xtos(boost::asio::buffer_size(buffer)) + ")");
 				async_write(socket_, buffer,
 					boost::bind(&connection_type::handle_write_request, this->shared_from_this(), boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred)
 					);
@@ -362,7 +365,7 @@ namespace socket_helpers {
 				boost::optional<typename protocol_type::response_type> response = connection_->process_request(packet);
 				if (!response) {
 					for (int i = 0; i < info_.retry; i++) {
-						handler_->log_debug(__FILE__, __LINE__, "Retrying attempt " + strEx::s::xtos(i) + " of " + strEx::s::xtos(info_.retry));
+						handler_->log_debug(__FILE__, __LINE__, "Retrying attempt " + str::xtos(i) + " of " + str::xtos(info_.retry));
 						connect();
 						response = connection_->process_request(packet);
 						if (response)

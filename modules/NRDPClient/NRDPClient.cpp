@@ -1,33 +1,35 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "NRDPClient.h"
 
-#include <utils.h>
-#include <strEx.h>
-#include <http/client.hpp>
+#include "nrdp_client.hpp"
+#include "nrdp_handler.hpp"
 
 #include <nscapi/nscapi_settings_helper.hpp>
-#include <nscapi/nscapi_protobuf_functions.hpp>
 #include <nscapi/nscapi_core_helper.hpp>
+
+#include <str/utils.hpp>
+#include <http/client.hpp>
 
 #include <boost/make_shared.hpp>
 
-#include "nrdp_client.hpp"
-#include "nrdp_handler.hpp"
 
 /**
  * Default c-tor
@@ -92,7 +94,7 @@ bool NRDPClient::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode) {
 			hostname_ = boost::asio::ip::host_name();
 			std::transform(hostname_.begin(), hostname_.end(), hostname_.begin(), ::toupper);
 		} else {
-			strEx::s::token dn = strEx::s::getToken(boost::asio::ip::host_name(), '.');
+			str::utils::token dn = str::utils::getToken(boost::asio::ip::host_name(), '.');
 
 			try {
 				boost::asio::io_service svc;
@@ -111,19 +113,19 @@ bool NRDPClient::loadModuleEx(std::string alias, NSCAPI::moduleLoadMode) {
 				NSC_LOG_ERROR_EXR("Failed to resolve: ", e);
 			}
 
-			strEx::s::replace(hostname_, "${host}", dn.first);
-			strEx::s::replace(hostname_, "${domain}", dn.second);
+			str::utils::replace(hostname_, "${host}", dn.first);
+			str::utils::replace(hostname_, "${domain}", dn.second);
 			std::transform(dn.first.begin(), dn.first.end(), dn.first.begin(), ::toupper);
 			std::transform(dn.second.begin(), dn.second.end(), dn.second.begin(), ::toupper);
-			strEx::s::replace(hostname_, "${host_uc}", dn.first);
-			strEx::s::replace(hostname_, "${domain_uc}", dn.second);
+			str::utils::replace(hostname_, "${host_uc}", dn.first);
+			str::utils::replace(hostname_, "${domain_uc}", dn.second);
 			std::transform(dn.first.begin(), dn.first.end(), dn.first.begin(), ::tolower);
 			std::transform(dn.second.begin(), dn.second.end(), dn.second.begin(), ::tolower);
-			strEx::s::replace(hostname_, "${host_lc}", dn.first);
-			strEx::s::replace(hostname_, "${domain_lc}", dn.second);
+			str::utils::replace(hostname_, "${host_lc}", dn.first);
+			str::utils::replace(hostname_, "${domain_lc}", dn.second);
 		}
 		client_.set_sender(hostname_);
-	} catch (nscapi::nscapi_exception &e) {
+	} catch (nsclient::nsclient_exception &e) {
 		NSC_LOG_ERROR_EXR("NSClient API exception: ", e);
 		return false;
 	} catch (std::exception &e) {

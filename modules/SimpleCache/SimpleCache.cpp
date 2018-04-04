@@ -1,41 +1,44 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <map>
-#include <vector>
+#include "SimpleCache.h"
+
+#include <nscapi/nscapi_protobuf_functions.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+#include <nscapi/nscapi_core_helper.hpp>
+#include <nscapi/nscapi_program_options.hpp>
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
+#include <nscapi/nscapi_helper.hpp>
+#include <nscapi/nscapi_settings_helper.hpp>
+
+#include <parsers/expression/expression.hpp>
+
+#include <str/format.hpp>
 
 #include <boost/foreach.hpp>
 #include <boost/bind.hpp>
 #include <boost/assign.hpp>
 #include <boost/optional.hpp>
 
-#include <time.h>
-
-#include <nscapi/nscapi_protobuf_functions.hpp>
-#include <nscapi/nscapi_core_helper.hpp>
-#include <nscapi/nscapi_program_options.hpp>
-#include <nscapi/nscapi_helper_singleton.hpp>
-#include <nscapi/macros.hpp>
-#include <nscapi/nscapi_helper.hpp>
-
-#include <parsers/expression/expression.hpp>
-
-#include <nscapi/nscapi_settings_helper.hpp>
-
-#include "SimpleCache.h"
+#include <map>
+#include <vector>
 
 namespace sh = nscapi::settings_helper;
 namespace po = boost::program_options;
@@ -177,12 +180,36 @@ void SimpleCache::handleNotification(const std::string &channel, const Plugin::Q
 	{
 		boost::unique_lock<boost::shared_mutex> lock(cache_mutex_);
 		if (!lock) {
-			nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), Plugin::Common_Result_StatusCodeType_STATUS_ERROR, "Failed to get lock");
+			nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), false, "Failed to get lock");
 			return;
 		}
 		cache_[key] = data;
 	}
-	nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), Plugin::Common_Result_StatusCodeType_STATUS_OK, "message has been cached");
+	nscapi::protobuf::functions::append_simple_submit_response_payload(response, request.command(), true, "message has been cached");
+}
+
+void SimpleCache::list_cache(const Plugin::QueryRequestMessage::Request &request, Plugin::QueryResponseMessage::Response *response) {
+ 	cache_query query;
+	std::string not_found_msg, not_found_msg_code;
+	std::string key;
+	po::options_description desc = nscapi::program_options::create_desc(request);
+
+	boost::program_options::variables_map vm;
+	if (!nscapi::program_options::process_arguments_from_request(vm, desc, request, *response))
+		return;
+
+	std::string data;
+	{
+		boost::shared_lock<boost::shared_mutex> lock(cache_mutex_);
+		if (!lock) {
+			return nscapi::protobuf::functions::set_response_bad(*response, std::string("Failed to get lock"));
+		}
+		BOOST_FOREACH(const cache_type::value_type &c, cache_) {
+			str::format::append_list(data, c.first);
+		}
+	}
+	response->add_lines()->set_message(data);
+	response->set_result(nscapi::protobuf::functions::nagios_status_to_gpb(nscapi::plugin_helper::translateReturn(not_found_msg_code)));
 }
 
 void SimpleCache::check_cache(const Plugin::QueryRequestMessage::Request &request, Plugin::QueryResponseMessage::Response *response) {

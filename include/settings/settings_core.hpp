@@ -1,35 +1,38 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <string>
-#include <map>
-#include <set>
-#include <algorithm>
+#include <nsclient/logger/logger.hpp>
+#include <settings/settings_value.hpp>
+
+#include <utf8.hpp>
 
 #include <boost/thread/thread.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/optional.hpp>
 
-#include <nsclient/logger/logger.hpp>
-
-#include <strEx.h>
-#include <utf8.hpp>
+#include <string>
+#include <map>
+#include <set>
+#include <algorithm>
 
 #define BUFF_LEN 4096
 
@@ -81,11 +84,11 @@ namespace settings {
 			std::string title;
 			std::string description;
 			key_type type;
-			std::string defValue;
+			nscapi::settings::settings_value defValue;
 			bool advanced;
 			bool is_sample;
 			std::set<unsigned int> plugins;
-			key_description(unsigned int plugin_id, std::string title_, std::string description_, settings_core::key_type type_, std::string defValue_, bool advanced_, bool is_sample_)
+			key_description(unsigned int plugin_id, std::string title_, std::string description_, settings_core::key_type type_, nscapi::settings::settings_value defValue_, bool advanced_, bool is_sample_)
 				: title(title_), description(description_), type(type_), defValue(defValue_), advanced(advanced_), is_sample(is_sample_) {
 				append_plugin(plugin_id);
 			}
@@ -108,11 +111,30 @@ namespace settings {
 				plugins.insert(plugin_id);
 			}
 		};
+
+		struct subkey_description {
+			bool is_subkey;
+			std::string title;
+			std::string description;
+			bool advanced;
+			bool is_sample;
+			subkey_description(std::string title_, std::string description_, bool advanced_, bool is_sample_) : is_subkey(true), title(title_), description(description_), advanced(advanced_), is_sample(is_sample_) {
+			}
+			subkey_description() : is_subkey(false), advanced(false), is_sample(false) {}
+			void update(std::string title_, std::string description_, bool advanced_, bool is_sample_) {
+				is_subkey = true;
+				title = title_;
+				description = description_;
+				advanced = advanced_;
+				is_sample = is_sample_;
+			}
+		};
 		struct path_description {
 			std::string title;
 			std::string description;
 			bool advanced;
 			bool is_sample;
+			subkey_description subkey;
 			typedef std::map<std::string, key_description> keys_type;
 			keys_type keys;
 			std::set<unsigned int> plugins;
@@ -171,6 +193,8 @@ namespace settings {
 		/// @author mickem
 		virtual void register_path(unsigned int plugin_id, std::string path, std::string title, std::string description, bool advanced, bool is_sample, bool update_existing = true) = 0;
 
+		virtual void register_subkey(unsigned int plugin_id, std::string path, std::string title, std::string description, bool advanced, bool is_sample, bool update_existing = true) = 0;
+
 		//////////////////////////////////////////////////////////////////////////
 		/// Register a key with the settings module.
 		/// A registered key or path will be nicely documented in some of the settings files when converted.
@@ -184,7 +208,7 @@ namespace settings {
 		/// @param advanced advanced options will only be included if they are changed
 		///
 		/// @author mickem
-		virtual void register_key(unsigned int plugin_id, std::string path, std::string key, key_type type, std::string title, std::string description, std::string defValue, bool advanced, bool is_sample, bool update_existing = true) = 0;
+		virtual void register_key(unsigned int plugin_id, std::string path, std::string key, key_type type, std::string title, std::string description, nscapi::settings::settings_value defValue, bool advanced, bool is_sample, bool update_existing = true) = 0;
 
 
 		virtual void register_tpl(unsigned int plugin_id, std::string path, std::string title, std::string data) = 0;

@@ -1,24 +1,28 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <boost/asio.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
 
-#include <strEx.h>
+#include <str/utils.hpp>
+#include <str/format.hpp>
 #include <utf8.hpp>
 
 #include <socket/socket_helpers.hpp>
@@ -82,13 +86,13 @@ std::string socket_helpers::allowed_hosts_manager::to_string() {
 		ip::address_v4 a(r.addr);
 		ip::address_v4 m(r.mask);
 		std::string s = a.to_string() + "(" + m.to_string() + ")";
-		strEx::append_list(ret, s);
+		str::format::append_list(ret, s);
 	}
 	BOOST_FOREACH(const host_record_v6 &r, entries_v6) {
 		ip::address_v6 a(r.addr);
 		ip::address_v6 m(r.mask);
 		std::string s = a.to_string() + "(" + m.to_string() + ")";
-		strEx::append_list(ret, s);
+		str::format::append_list(ret, s);
 	}
 	return ret;
 }
@@ -99,9 +103,9 @@ std::size_t extract_mask(std::string &mask, std::size_t masklen) {
 		if (p1 != std::string::npos) {
 			std::string::size_type p2 = mask.find_first_not_of("0123456789", p1);
 			if (p2 != std::string::npos)
-				masklen = strEx::s::stox<std::size_t>(mask.substr(p1, p2));
+				masklen = str::stox<std::size_t>(mask.substr(p1, p2));
 			else
-				masklen = strEx::s::stox<std::size_t>(mask.substr(p1));
+				masklen = str::stox<std::size_t>(mask.substr(p1));
 		}
 	}
 	return static_cast<unsigned int>(masklen);
@@ -131,7 +135,7 @@ addr calculate_mask(std::string mask_s) {
 
 void socket_helpers::allowed_hosts_manager::set_source(std::string source) {
 	sources.clear();
-	BOOST_FOREACH(std::string s, strEx::s::splitEx(source, std::string(","))) {
+	BOOST_FOREACH(std::string s, str::utils::split_lst(source, std::string(","))) {
 		boost::trim(s);
 		if (!s.empty())
 			sources.push_back(s);
@@ -229,7 +233,7 @@ void socket_helpers::connection_info::ssl_opts::configure_ssl_context(boost::asi
 
 boost::asio::ssl::context::verify_mode socket_helpers::connection_info::ssl_opts::get_verify_mode() const {
 	boost::asio::ssl::context::verify_mode mode = boost::asio::ssl::context_base::verify_none;
-	BOOST_FOREACH(const std::string &key, strEx::s::splitEx(verify_mode, std::string(","))) {
+	BOOST_FOREACH(const std::string &key, str::utils::split_lst(verify_mode, std::string(","))) {
 		if (key == "client-once")
 			mode |= boost::asio::ssl::context_base::verify_client_once;
 		else if (key == "none")
@@ -263,7 +267,7 @@ boost::asio::ssl::context::file_format socket_helpers::connection_info::ssl_opts
 #ifdef USE_SSL
 long socket_helpers::connection_info::ssl_opts::get_ctx_opts() const {
 	long opts = 0;
-	BOOST_FOREACH(const std::string &key, strEx::s::splitEx(ssl_options, std::string(","))) {
+	BOOST_FOREACH(const std::string &key, str::utils::split_lst(ssl_options, std::string(","))) {
 		if (key == "default-workarounds")
 			opts |= boost::asio::ssl::context::default_workarounds;
 		if (key == "no-sslv2")

@@ -16,8 +16,11 @@ ELSE(JSON_SPIRIT_FOUND)
 ENDIF(JSON_SPIRIT_FOUND)
 SET(SRCS ${SRCS}
 	"${TARGET}.cpp"
+	extscr_cli.cpp
+	script_provider.cpp
 
 	${NSCP_DEF_PLUGIN_CPP}
+  ${NSCP_ERROR_CPP}
 )
 
 ADD_DEFINITIONS(${NSCP_GLOBAL_DEFINES})
@@ -27,12 +30,18 @@ IF(WIN32)
 		"${TARGET}.h"
 		commands.hpp
 		alias.hpp
+		extscr_cli.h
+		script_provider.hpp
+		script_interface.hpp
+
 		${NSCP_INCLUDEDIR}/process/execute_process.hpp
 
 		${NSCP_INCLUDEDIR}/win_sysinfo/win_sysinfo.cpp
 		${NSCP_INCLUDEDIR}/win_sysinfo/win_sysinfo.hpp
 
 		${NSCP_DEF_PLUGIN_HPP}
+		${NSCP_ERROR_HPP}
+
 	)
 	SET(SRCS ${SRCS}
 		${NSCP_INCLUDEDIR}/process/execute_process_w32.cpp

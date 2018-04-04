@@ -1,31 +1,35 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <scheduler/simple_scheduler.hpp>
 
-#include <boost/bind.hpp>
-#include <nscp_string.hpp>
 #include <utf8.hpp>
-
 #include <nscapi/macros.hpp>
+
+#include <boost/bind.hpp>
+#include <boost/date_time/gregorian/gregorian.hpp>
 
 #if BOOST_VERSION >= 105300
 #include <boost/interprocess/detail/atomic.hpp>
 #endif
 
+boost::posix_time::ptime time_t_epoch(boost::gregorian::date(1970, 1, 1));
 
 
 namespace simple_scheduler {
@@ -35,13 +39,28 @@ namespace simple_scheduler {
 	volatile boost::uint32_t metric_executed = 0;
 	volatile boost::uint32_t metric_compleated = 0;
 	volatile boost::uint32_t metric_errors = 0;
+	volatile boost::uint32_t metric_time = 0;
+	volatile boost::uint32_t metric_count = 0;
+	volatile boost::uint32_t metric_max_time = 0;
+	volatile boost::uint32_t metric_start = 0;
 	using namespace boost::interprocess::ipcdetail;
+	inline void my_atomic_add(volatile boost::uint32_t *mem, boost::uint32_t value) {
+		boost::uint32_t old, c(atomic_read32(mem));
+		while ((old = atomic_cas32(mem, c + value, c)) != c) {
+			c = old;
+		}
+	}
 #else
 	volatile int metric_executed = 0;
 	volatile int metric_compleated = 0;
 	volatile int metric_errors = 0;
+	volatile long long metric_time = 0;
+	volatile long long metric_count = 0;
+	volatile long long metric_max_time = 0;
+	volatile int metric_start = 0;
 	int atomic_inc32(volatile int *i) { return 0;  }
 	int atomic_read32(volatile int *i) { return 0; }
+	void my_atomic_add(volatile int *i, int j) { }
 #endif
 
 	bool scheduler::has_metrics() const {
@@ -68,13 +87,37 @@ namespace simple_scheduler {
 	std::size_t scheduler::get_metric_ql() {
 		return queue_.size();
 	}
+	int scheduler::get_avg_time() const {
+		boost::uint32_t t = atomic_read32(&metric_time);
+		boost::uint32_t c = atomic_read32(&metric_count);
+		if (c == 0) {
+			return 0;
+		}
+		if (t > 4000000000) {
+			atomic_write32(&metric_time, 0);
+			atomic_write32(&metric_count, 0);
+		}
+		return t / c;
+	}
+
+	int scheduler::get_metric_rate() const {
+		boost::posix_time::time_duration diff = now() - time_t_epoch;
+		boost::uint32_t total_time = diff.total_seconds() - metric_start;
+		boost::uint32_t count = atomic_read32(&metric_compleated);
+		if (total_time == 0) {
+			return 0;
+		}
+		return count / total_time;
+	}
 
 
 	void scheduler::start() {
+		boost::posix_time::time_duration diff = now() - time_t_epoch;
+		metric_start = diff.total_seconds();
 		log_trace(__FILE__, __LINE__, "starting all threads");
 		running_ = true;
 		start_threads();
-		log_trace(__FILE__, __LINE__, "Thread pool contains: " + strEx::s::xtos(threads_.threadCount()));
+		log_trace(__FILE__, __LINE__, "Thread pool contains: " + str::xtos(threads_.threadCount()));
 	}
 
 	void scheduler::prepare_shutdown() {
@@ -91,11 +134,11 @@ namespace simple_scheduler {
 		has_watchdog_ = false;
 		threads_.interruptThreads();
 		threads_.waitForThreads();
-		log_trace(__FILE__, __LINE__, "Thread pool contains: " + strEx::s::xtos(threads_.threadCount()));
+		log_trace(__FILE__, __LINE__, "Thread pool contains: " + str::xtos(threads_.threadCount()));
 	}
 
-	int scheduler::add_task(std::string tag, boost::posix_time::time_duration duration) {
-		task item(tag, duration);
+	int scheduler::add_task(std::string tag, boost::posix_time::time_duration duration, double randomness) {
+		task item(tag, duration, randomness);
 		{
 			boost::mutex::scoped_lock l(mutex_);
 			item.id = ++schedule_id_;
@@ -136,6 +179,7 @@ namespace simple_scheduler {
 
 	void scheduler::watch_dog(int id) {
 		schedule_queue_type::value_type instance;
+		bool maximum_threads_reached = false;
 		while (!stop_requested_) {
 			try {
 				try {
@@ -143,10 +187,11 @@ namespace simple_scheduler {
 					if (instance) {
 						boost::posix_time::time_duration off = now() - (*instance).time;
 						if (off.total_seconds() > 5) {
-							if (thread_count_ < 10)
+							if (thread_count_ < 10) {
 								thread_count_++;
-							if (threads_.threadCount() > thread_count_) {
-								log_error(__FILE__, __LINE__, "Scheduler is overloading: " + strEx::s::xtos(instance->schedule_id) + " is " + strEx::s::xtos(off.total_seconds()) + " seconds slow");
+							}  else if (!maximum_threads_reached) {
+								log_error(__FILE__, __LINE__, "Auto-scaling of scheduler failed (maximum of 10 threads reached) you need to manually configure threads to resolve items running slow");
+								maximum_threads_reached = true;
 							}
 						}
 					}
@@ -167,7 +212,7 @@ namespace simple_scheduler {
 				break;
 			}
 		}
-		log_trace(__FILE__, __LINE__, "Terminating thread: " + strEx::s::xtos(id));
+		log_trace(__FILE__, __LINE__, "Terminating thread: " + str::xtos(id));
 	}
 
 	void scheduler::thread_proc(int id) {
@@ -184,14 +229,14 @@ namespace simple_scheduler {
 				try {
 					boost::posix_time::time_duration off = now() - (*instance).time;
 					if (off.total_seconds() > error_threshold_) {
-						log_error(__FILE__, __LINE__, "Ran scheduled item " + strEx::s::xtos(instance->schedule_id) + " " + strEx::s::xtos(off.total_seconds()) + " seconds to late from thread " + strEx::s::xtos(id));
+						log_error(__FILE__, __LINE__, "Ran scheduled item " + str::xtos(instance->schedule_id) + " " + str::xtos(off.total_seconds()) + " seconds to late from thread " + str::xtos(id));
 					}
 					boost::thread::sleep((*instance).time);
 				} catch (const boost::thread_interrupted &) {
 					if (!queue_.push(*instance))
 						log_error(__FILE__, __LINE__, "Failed to push item");
 					if (stop_requested_) {
-						log_trace(__FILE__, __LINE__, "Terminating thread: " + strEx::s::xtos(id));
+						log_trace(__FILE__, __LINE__, "Terminating thread: " + str::xtos(id));
 						return;
 					}
 					continue;
@@ -209,8 +254,13 @@ namespace simple_scheduler {
 				if (item) {
 					try {
 						bool to_reschedule = false;
-						if (handler_)
+						if (handler_) {
 							to_reschedule = handler_->handle_schedule(*item);
+						}
+						boost::posix_time::time_duration duration = now() - now_time;
+
+						my_atomic_add(&metric_time, duration.total_milliseconds());
+						atomic_inc32(&metric_count);
 						if (to_reschedule) {
 							reschedule(*item, now_time);
 							atomic_inc32(&metric_compleated);
@@ -225,7 +275,7 @@ namespace simple_scheduler {
 					}
 				} else {
 					atomic_inc32(&metric_errors);
-					log_error(__FILE__, __LINE__, "Task not found: " + strEx::s::xtos(instance->schedule_id));
+					log_error(__FILE__, __LINE__, "Task not found: " + str::xtos(instance->schedule_id));
 				}
 			}
 		} catch (const boost::thread_interrupted &e) {
@@ -236,7 +286,7 @@ namespace simple_scheduler {
 			atomic_inc32(&metric_errors);
 			log_error(__FILE__, __LINE__, "Exception in scheduler thread (thread will be killed)");
 		}
-		log_trace(__FILE__, __LINE__, "Terminating thread: " + strEx::s::xtos(id));
+		log_trace(__FILE__, __LINE__, "Terminating thread: " + str::xtos(id));
 	}
 
 

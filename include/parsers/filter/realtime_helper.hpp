@@ -1,23 +1,24 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <boost/shared_ptr.hpp>
-#include <boost/function.hpp>
 
 #include <parsers/expression/expression.hpp>
 #include <parsers/where/engine_impl.hpp>
@@ -25,6 +26,14 @@
 #include <NSCAPI.h>
 #include <nscapi/nscapi_helper.hpp>
 #include <nscapi/nscapi_core_helper.hpp>
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
+
+#include <nsclient/nsclient_exception.hpp>
+
+#include <boost/shared_ptr.hpp>
+#include <boost/function.hpp>
+
 
 namespace parsers {
 	namespace where {
@@ -38,24 +47,92 @@ namespace parsers {
 			typedef typename runtime_data::transient_data_type transient_data_type;
 			typedef boost::optional<boost::posix_time::time_duration> op_duration;
 			struct container {
+			private:
 				std::string alias;
+				std::string event_name;
 				std::string target;
 				std::string target_id;
 				std::string source_id;
+			public:
 				std::string command;
 				std::string timeout_msg;
 				NSCAPI::nagiosReturn severity;
-				runtime_data data;
-				filter_type filter;
 				boost::optional<boost::posix_time::time_duration> max_age;
+				boost::optional<boost::posix_time::time_duration> silent_period;
+
+				// should be private...
+				filter_type filter;
+
+			private:
 				boost::posix_time::ptime next_ok_;
+				boost::posix_time::ptime next_alert_;
+			public:
 				bool debug;
 				bool escape_html;
-				container() : debug(false), escape_html(false) {}
+				runtime_data data;
 
-				void touch(const boost::posix_time::ptime &now) {
+				container(std::string alias, std::string event_name, runtime_data data) : alias(alias), event_name(event_name), command(alias), debug(false), escape_html(false), data(data) {}
+
+				void set_target(std::string new_target, std::string new_target_id, std::string new_source_id) {
+					target = new_target;
+					target_id = new_target_id;
+					source_id = new_source_id;
+				}
+				bool is_event() const {
+					return target == "event";
+				}
+				bool is_events() const {
+					return target == "events";
+				}
+
+				std::string get_event_name() const {
+					return event_name;
+				}
+				std::string get_alias() const {
+					return alias;
+				}
+				std::string get_target() const {
+					return target;
+				}
+				std::string get_target_id() const {
+					return target_id;
+				}
+				std::string get_source_id() const {
+					return source_id;
+				}
+
+				bool build_filters(nscapi::settings_filters::filter_object config, std::string &error) {
+					std::string message;
+					if (!filter.build_syntax(config.debug, config.syntax_top, config.syntax_detail, config.perf_data, config.perf_config, config.syntax_ok, config.syntax_empty, message)) {
+						error = "Failed to build strings " + alias + ": " + message;
+						return false;
+					}
+					if (!filter.build_engines(config.debug, config.filter_string, config.filter_ok, config.filter_warn, config.filter_crit)) {
+						error = "Failed to build filters: " + alias;
+						return false;
+					}
+
+					if (!filter.validate(message)) {
+						error = "Failed to validate filter for " + alias + ": " + message;
+						return false;
+					}
+					return true;
+				}
+
+				bool is_silent(const boost::posix_time::ptime &now) {
+					if (!silent_period) {
+						return false;
+					}
+					return now < next_alert_;
+				}
+
+				void touch(const boost::posix_time::ptime &now, bool alert) {
 					if (max_age)
 						next_ok_ = now + (*max_age);
+					if (alert && silent_period)
+						next_alert_ = now + (*silent_period);
+					else if (silent_period)
+						next_alert_ = now;
 					data.touch(now);
 				}
 
@@ -79,37 +156,24 @@ namespace parsers {
 
 			std::list<container_type> items;
 
-			bool add_item(const boost::shared_ptr<config_object> object, const runtime_data &source_data) {
-				container_type item(new container);
-				item->alias = object->get_alias();
-				item->data = source_data;
-				item->target = object->filter.target;
-				item->target_id = object->filter.target_id;
-				item->source_id = object->filter.source_id;
-				item->command = item->alias;
+			bool add_item(const boost::shared_ptr<config_object> object, const runtime_data &source_data, const std::string event_name) {
+				container_type item(new container(object->get_alias(), event_name, source_data));
+				item->set_target(object->filter.target, object->filter.target_id, object->filter.source_id);
 				item->timeout_msg = object->filter.timeout_msg;
 				item->severity = object->filter.severity;
 				item->max_age = object->filter.max_age;
+				item->silent_period = object->filter.silent_period;
 				item->debug = object->filter.debug;
 				item->escape_html = object->filter.escape_html;
 				if (!object->filter.command.empty())
 					item->command = object->filter.command;
 				std::string message;
 
-				if (!item->filter.build_syntax(object->filter.syntax_top, object->filter.syntax_detail, object->filter.perf_data, object->filter.perf_config, object->filter.syntax_ok, object->filter.syntax_empty, message)) {
-					NSC_LOG_ERROR("Failed to build strings " + object->get_alias() + ": " + message);
-					return false;
-				}
-				if (!item->filter.build_engines(object->filter.debug, object->filter.filter_string, object->filter.filter_ok, object->filter.filter_warn, object->filter.filter_crit)) {
-					NSC_LOG_ERROR("Failed to build filters: " + object->get_alias());
+				if (!item->build_filters(object->filter, message)) {
+					NSC_LOG_ERROR(message);
 					return false;
 				}
 
-				std::string error;
-				if (!item->filter.validate(error)) {
-					NSC_LOG_ERROR("Failed to validate filter for " + object->get_alias() + ": " + error);
-					return false;
-				}
 				item->data.boot();
 				items.push_back(item);
 				return true;
@@ -118,14 +182,14 @@ namespace parsers {
 			void process_timeout(const container_type item) {
 				std::string response;
 				nscapi::core_helper ch(core, plugin_id);
-				if (!ch.submit_simple_message(item->target, item->source_id, item->target_id, item->command, NSCAPI::query_return_codes::returnOK, item->timeout_msg, "", response)) {
+				if (!ch.submit_simple_message(item->get_target(), item->get_source_id(), item->get_target_id(), item->command, NSCAPI::query_return_codes::returnOK, item->timeout_msg, "", response)) {
 					NSC_LOG_ERROR("Failed to submit result: " + response);
 				}
 			}
 
-			bool process_item(container_type item, transient_data_type data) {
+			bool process_item(container_type item, transient_data_type data, bool is_silent) {
 				std::string response;
-				if (item->target == "events" || item->target == "event") {
+				if (item->is_events() || item->is_event()) {
 					item->filter.fetch_hash(true);
 				}
 				item->filter.start_match();
@@ -137,22 +201,27 @@ namespace parsers {
 					return false;
 				}
 
+				if (is_silent) {
+					NSC_TRACE_MSG("Eventlog filter is silenced " + item->get_alias());
+					return true;
+				}
+
 				nscapi::core_helper ch(core, plugin_id);
-				if (item->target == "event") {
+				if (item->is_event()) {
 					typedef std::list<std::map<std::string, std::string> > list_type;
 					typedef std::map<std::string, std::string> hash_type;
 
 					list_type keys = item->filter.records_;
 					BOOST_FOREACH(hash_type &bundle, keys) {
-						if (!ch.emit_event("CheckSystem", "name", bundle, response)) {
+						if (!ch.emit_event(item->get_event_name(), item->get_alias(), bundle, response)) {
 							NSC_LOG_ERROR("Failed to submit '" + response);
 						}
 					}
 					return true;
 				}
-				if (item->target == "events") {
+				if (item->is_events()) {
 					std::list<std::map<std::string, std::string> > keys = item->filter.records_;
-					if (!ch.emit_event("CheckSystem", "name", keys, response)) {
+					if (!ch.emit_event(item->get_event_name(), item->get_alias(), keys, response)) {
 						NSC_LOG_ERROR("Failed to submit '" + response);
 					}
 					return true;
@@ -161,7 +230,7 @@ namespace parsers {
 				std::string message = item->filter.get_message();
 				if (message.empty())
 					message = "Nothing matched";
-				if (!ch.submit_simple_message(item->target, item->source_id, item->target_id, item->command, item->filter.summary.returnCode, message, "", response)) {
+				if (!ch.submit_simple_message(item->get_target(), item->get_source_id(), item->get_target_id(), item->command, item->filter.summary.returnCode, message, "", response)) {
 					NSC_LOG_ERROR("Failed to submit '" + message);
 				}
 				return true;
@@ -170,7 +239,7 @@ namespace parsers {
 			void touch_all() {
 				boost::posix_time::ptime current_time = boost::posix_time::second_clock::local_time();
 				BOOST_FOREACH(container_type item, items) {
-					item->touch(current_time);
+					item->touch(current_time, false);
 				}
 			}
 
@@ -186,9 +255,9 @@ namespace parsers {
 					BOOST_FOREACH(container_type item, items) {
 						if (item->data.has_changed(data)) {
 							has_changed = true;
-							if (process_item(item, data)) {
+							if (process_item(item, data, item->is_silent(current_time))) {
 								has_matched = true;
-								item->touch(current_time);
+								item->touch(current_time, true);
 							}
 						}
 					}
@@ -198,7 +267,7 @@ namespace parsers {
 						NSC_TRACE_MSG("No filters matched: " + data->to_string());
 					}
 					do_process_no_items(current_time);
-				} catch (const nscp_exception &e) {
+				} catch (const nsclient::nsclient_exception &e) {
 					NSC_DEBUG_MSG("Realtime processing faillure: " + e.reason());
 				} catch (const std::exception &e) {
 					NSC_DEBUG_MSG("Realtime processing faillure: " + utf8::utf8_from_native(e.what()));
@@ -213,7 +282,7 @@ namespace parsers {
 					BOOST_FOREACH(container_type item, items) {
 						if (item->has_timedout(current_time)) {
 							process_timeout(item);
-							item->touch(current_time);
+							item->touch(current_time, false);
 						}
 					}
 				} catch (...) {
@@ -235,7 +304,7 @@ namespace parsers {
 
 				boost::posix_time::time_duration dur;
 				if (!minNext) {
-					NSC_DEBUG_MSG("Next miss time is in: no timeout specified");
+					NSC_TRACE_MSG("Next miss time is in: no timeout specified");
 				} else {
 					boost::posix_time::time_duration dur = *minNext - current_time;
 					if (dur.total_seconds() <= 0) {
@@ -251,7 +320,7 @@ namespace parsers {
 							dur = boost::posix_time::time_duration(0, 0, 30, 0);
 						}
 					}
-					NSC_DEBUG_MSG("Next miss time is in: " + strEx::s::xtos(dur.total_seconds()) + "s");
+					NSC_TRACE_MSG("Next miss time is in: " + str::xtos(dur.total_seconds()) + "s");
 					ret = dur;
 				}
 				return ret;

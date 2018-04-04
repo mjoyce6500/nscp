@@ -1,25 +1,33 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <strEx.h>
-#include <error.hpp>
+#include <nsclient/nsclient_exception.hpp>
 
+#include <str/xtos.hpp>
+#include <str/utils.hpp>
+
+#include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/gregorian/gregorian.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
 
 
 namespace cron_parser {
@@ -35,11 +43,11 @@ namespace cron_parser {
 		}
 	};
 	struct schedule_item {
-		int value_;
+		std::list<int> value_;
 		int min_;
 		int max_;
 		bool star_;
-		schedule_item() : value_(0), min_(0), max_(0), star_(false) {}
+		schedule_item() : min_(0), max_(0), star_(false) {}
 		schedule_item(const schedule_item &other) : value_(other.value_), min_(other.min_), max_(other.max_), star_(other.star_) {}
 		schedule_item& operator= (const schedule_item &other) {
 			value_ = other.value_;
@@ -58,20 +66,27 @@ namespace cron_parser {
 				return v;
 			}
 			try {
-				v.value_ = boost::lexical_cast<int>(value.c_str());
-				if (v.value_ < v.min_ || v.value_ > v.max_)
-					throw nscp_exception("Invalid value: " + value);
+				std::vector<std::string> split;
+				boost::algorithm::split(split, value, boost::algorithm::is_any_of(","));
+				BOOST_FOREACH(const std::string &val, split) {
+					int iVal = boost::lexical_cast<int>(val.c_str());
+					if (iVal < v.min_ || iVal > v.max_)
+						throw nsclient::nsclient_exception("Invalid value: " + value);
+					v.value_.push_back(iVal);
+				}
 				return v;
 			} catch (...) {
-				throw nscp_exception("Invalid value: " + value);
+				throw nsclient::nsclient_exception("Invalid value: " + value);
 			}
-			throw nscp_exception("Invalid value: " + value);
+			throw nsclient::nsclient_exception("Invalid value: " + value);
 		}
 		bool is_valid_for(int v) const {
 			if (star_)
 				return true;
-			if (value_ == v)
-				return true;
+			BOOST_FOREACH(const int &val, value_) {
+				if (val == v)
+					return true;
+			}
 			return false;
 		}
 
@@ -86,13 +101,22 @@ namespace cron_parser {
 					return next_value(i, true);
 				}
 			}
-			throw nscp_exception("Failed to find match for: " + value);
+			throw nsclient::nsclient_exception("Failed to find match for: " + value);
 		}
 
 		std::string to_string() const {
 			if (star_)
 				return "*";
-			return strEx::s::xtos(value_);
+			std::stringstream ss;
+			bool first = true;
+			BOOST_FOREACH(const int &v, value_) {
+				if (!first) {
+					ss << ",";
+				}
+				ss << str::xtos(v);
+				first = false;
+			}
+			return ss.str();
 		}
 
 
@@ -159,10 +183,11 @@ namespace cron_parser {
 	inline schedule parse(std::string s) {
 		// min hour dom mon dow
 		// min: 0-59, hour: 0-23, dom: 1-31, mon: 1-12, dow: 0-6
-		std::vector<std::string> v = strEx::s::split<std::vector<std::string> >(s, " ");
+		typedef std::vector<std::string> vec;
+		vec v = str::utils::split<vec>(s, " ");
 		schedule ret;
 		if (v.size() != 5)
-			throw nscp_exception("invalid cron syntax: " + s);
+			throw nsclient::nsclient_exception("invalid cron syntax: " + s);
 		ret.min = schedule_item::parse(v[0], 0, 59);
 		ret.hour = schedule_item::parse(v[1], 0, 23);
 		ret.dom = schedule_item::parse(v[2], 1, 31);

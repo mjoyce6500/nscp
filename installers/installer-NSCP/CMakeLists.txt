@@ -59,12 +59,18 @@ set(MSVER "vc140")
 endif()
 SET(WIX_CANDLE_FLAGS -dboost=true -darch=${ARCH} -arch ${ARCH}
 	-dVersion.Major=${VERSION_SERIES} -dVersion.Minor=${VERSION_MAJOR} -dVersion.Revision=${VERSION_MINOR} -dVersion.Build=${VERSION_BUILD} -dVersion.BuildPad=${VERSION_BUILD_PAD}
-	"-dWebHelpSource=${NSCP_PROJECT_BINARY_DIR_NATIVE}\\ext\\docs\\html"
+	"-dWebHelpSource=${NSCP_PROJECT_BINARY_DIR_NATIVE}\\docs\\html"
 	"-dWebSource=..\\..\\web" 
 	"-dScriptSource=..\\..\\scripts" 
 	"-dOP5ScriptSource=..\\..\\scripts\\op5" 
 	"-dOP5ConfigSource=${NSCP_PROJECT_BINARY_DIR}" 
 	"-dInSource=${CMAKE_CURRENT_SOURCE_DIR}"
+	"-dApp.Title=NSClient++"
+	"-dApp.Path=NSClient++"
+	"-dApp.ShortPath=NSClient"
+	"-dApp.StartMenuPath=NSClient++"
+	"-dApp.ServiceName=nscp"
+	"-dApp.UppgradeCode=0B36E3B7-0042-452d-B376-57E0C07ADDBB"
 	-dSource=${NSCP_PROJECT_BINARY_DIR} 
 	-dHelpers=${NSCP_PROJECT_BINARY_DIR}/installer-dlls
 	-dBoostTag=${MSVER}-mt-1_58

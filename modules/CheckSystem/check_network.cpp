@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "check_network.hpp"
@@ -27,6 +30,9 @@
 #include <parsers/filter/modern_filter.hpp>
 #include <parsers/filter/cli_helper.hpp>
 #include <parsers/where/filter_handler_impl.hpp>
+
+#include <nsclient/nsclient_exception.hpp>
+
 
 namespace network_check {
 	
@@ -56,10 +62,22 @@ namespace network_check {
 		has_nif = true;
 	}
 
-	void network_interface::read_prd(wmi_impl::row r) {
-		BytesReceivedPersec = r.get_int("BytesReceivedPersec");
-		BytesSentPersec = r.get_int("BytesSentPersec");
-		BytesTotalPersec = r.get_int("BytesTotalPersec");
+	void network_interface::read_prd(wmi_impl::row r, long long delta) {
+		if (delta == 0) {
+			BytesReceivedPersec = 0;
+			BytesSentPersec = 0;
+			BytesTotalPersec = 0;
+		} else {
+			long long v = r.get_int("BytesReceivedPersec");
+			BytesReceivedPersec = (v - oldBytesReceivedPersec) / delta;
+			oldBytesReceivedPersec = v;
+			v = r.get_int("BytesSentPersec");
+			BytesSentPersec = (v - oldBytesSentPersec) / delta;
+			oldBytesSentPersec = v;
+			v = r.get_int("BytesTotalPersec");
+			BytesTotalPersec = (v - oldBytesTotalPersec ) / delta;
+			oldBytesTotalPersec = v;
+		}
 		has_prd = true;
 	}
 
@@ -85,20 +103,27 @@ namespace network_check {
 
 	void network_data::query_nif(netmap_type &netmap) {
 		wmi_impl::query wmiQuery1(helper::nif_query, "root\\cimv2", "", "");
-		wmi_impl::row_enumerator row1 = wmiQuery1.execute();
-		while (row1.has_next()) {
-			network_interface nif;
-			nif.read_wna(row1.get_next());
-			netmap[nif.name] = nif;
+		wmi_impl::row_enumerator row = wmiQuery1.execute();
+		while (row.has_next()) {
+			wmi_impl::row r = row.get_next();
+			std::string name = helper::parse_nif_name(r.get_string("Name"));
+			netmap_type::iterator it = netmap.find(name);
+			if (it == netmap.end()) {
+				network_interface nif;
+				nif.read_wna(r);
+				netmap[nif.name] = nif;
+			} else {
+				it->second.read_wna(r);
+			}
 		}
 		std::string keys;
 		BOOST_FOREACH(const netmap_type::value_type &v, netmap) {
-			strEx::append_list(keys, v.first);
+			str::format::append_list(keys, v.first);
 
 		}
 	}
 
-	void network_data::query_prd(netmap_type &netmap) {
+	void network_data::query_prd(netmap_type &netmap, long long delta) {
 		wmi_impl::query wmiQuery(helper::prd_query, "root\\cimv2", "", "");
 		wmi_impl::row_enumerator row = wmiQuery.execute();
 		while (row.has_next()) {
@@ -108,7 +133,7 @@ namespace network_check {
 			if (it == netmap.end()) {
 				continue;
 			}
-			it->second.read_prd(r);
+			it->second.read_prd(r, delta);
 		}
 	}
 
@@ -119,10 +144,23 @@ namespace network_check {
 			return;
 
 		nics_type tmp;
+		netmap_type netmap;
+		boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
+		boost::posix_time::ptime last;
+		{
+			boost::shared_lock<boost::shared_mutex> readLock(mutex_, boost::get_system_time() + boost::posix_time::seconds(5));
+			if (!readLock.owns_lock())
+				throw nsclient::nsclient_exception("Failed to get mutex for reading");
+			last = last_;
+			BOOST_FOREACH(const network_interface &v, nics_) {
+				netmap[v.get_name()] = v;
+			}
+		}
 		try {
-			netmap_type netmap;
+			boost::posix_time::time_duration diff = now - last;
+			long long delta = diff.total_seconds();
 			query_nif(netmap);
-			query_prd(netmap);
+			query_prd(netmap, delta);
 				
 			BOOST_FOREACH(const netmap_type::value_type &v, netmap) {
 				if (!v.second.is_compleate())
@@ -132,14 +170,14 @@ namespace network_check {
 		} catch (const wmi_impl::wmi_exception &e) {
 			if (e.get_code() == WBEM_E_INVALID_QUERY) {
 				fetch_network_ = false;
-				throw nscp_exception("Failed to fetch network metrics, disabling...");
+				throw nsclient::nsclient_exception("Failed to fetch network metrics, disabling...");
 			}
-			throw nscp_exception("Failed to fetch network metrics: " + e.reason());
+			throw nsclient::nsclient_exception("Failed to fetch network metrics: " + e.reason());
 		}
 		{
 			boost::unique_lock<boost::shared_mutex> writeLock(mutex_, boost::get_system_time() + boost::posix_time::seconds(5));
 			if (!writeLock.owns_lock())
-				throw nscp_exception("Failed to get mutex for writing");
+				throw nsclient::nsclient_exception("Failed to get mutex for writing");
 			nics_ = tmp;
 		}
 	}
@@ -147,7 +185,7 @@ namespace network_check {
 	nics_type network_data::get() {
 		boost::shared_lock<boost::shared_mutex> readLock(mutex_, boost::get_system_time() + boost::posix_time::seconds(5));
 		if (!readLock.owns_lock()) 
-			throw nscp_exception("Failed to get mutex for reading");
+			throw nsclient::nsclient_exception("Failed to get mutex for reading");
 		return nics_;
 	}
 
@@ -193,7 +231,7 @@ namespace network_check {
 
 			filter_type filter;
 			filter_helper.add_options("total > 10000", "total > 100000", "", filter.get_filter_syntax(), "critical");
-			filter_helper.add_syntax("${status}: ${list}", filter.get_filter_syntax(), "${name} >${sent} <${received} bps", "${name}", "", "%(status): Network interfaces seem ok.");
+			filter_helper.add_syntax("${status}: ${list}", "${name} >${sent} <${received} bps", "${name}", "", "%(status): Network interfaces seem ok.");
 
 			if (!filter_helper.parse_options())
 				return;

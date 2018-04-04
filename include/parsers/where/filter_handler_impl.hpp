@@ -1,23 +1,29 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <map>
-#include <vector>
+#include <parsers/where/engine_impl.hpp>
+#include <parsers/where/variable.hpp>
+#include <parsers/where/helpers.hpp>
+
+#include <str/format.hpp>
 
 #include <boost/function.hpp>
 #include <boost/shared_ptr.hpp>
@@ -25,11 +31,8 @@
 #include <boost/unordered_map.hpp>
 #include <boost/optional.hpp>
 
-#include <format.hpp>
-
-#include <parsers/where/engine_impl.hpp>
-#include <parsers/where/variable.hpp>
-#include <parsers/where/helpers.hpp>
+#include <map>
+#include <vector>
 
 namespace parsers {
 	namespace where {
@@ -443,7 +446,7 @@ namespace parsers {
 				count_total++;
 			}
 			void matched(std::string &line) {
-				format::append_list(list_match, line);
+				str::format::append_list(list_match, line);
 				count_match++;
 			}
 			void matched_unique() {
@@ -453,17 +456,17 @@ namespace parsers {
 				return count_match > 0;
 			}
 			void matched_ok(std::string &line) {
-				format::append_list(list_ok, line);
+				str::format::append_list(list_ok, line);
 				count_ok++;
 			}
 			void matched_warn(std::string &line) {
-				format::append_list(list_warn, line);
-				format::append_list(list_problem, line);
+				str::format::append_list(list_warn, line);
+				str::format::append_list(list_problem, line);
 				count_warn++;
 			}
 			void matched_crit(std::string &line) {
-				format::append_list(list_crit, line);
-				format::append_list(list_problem, line);
+				str::format::append_list(list_crit, line);
+				str::format::append_list(list_problem, line);
 				count_crit++;
 			}
 			void matched_ok_unique() {
@@ -505,7 +508,7 @@ namespace parsers {
 				std::string ret;
 				append_list(ret, "critical", list_crit);
 				append_list(ret, "warning", list_warn);
-				format::append_list(ret, list_ok);
+				str::format::append_list(ret, list_ok);
 				return ret;
 			}
 			long long get_count_match() {
@@ -526,21 +529,22 @@ namespace parsers {
 			long long get_count_total() {
 				return count_total;
 			}
-			std::string get_filter_syntax() const {
-				return
-					"count\tNumber of items matching the filter. Common option for all checks.\n"
-					"total\t Total number of items. Common option for all checks.\n"
-					"ok_count\t Number of items matched the ok criteria. Common option for all checks.\n"
-					"warn_count\t Number of items matched the warning criteria. Common option for all checks.\n"
-					"crit_count\t Number of items matched the critical criteria. Common option for all checks.\n"
-					"problem_count\t Number of items matched either warning or critical criteria. Common option for all checks.\n"
-					"list\t A list of all items which matched the filter. Common option for all checks.\n"
-					"ok_list\t A list of all items which matched the ok criteria. Common option for all checks.\n"
-					"warn_list\t A list of all items which matched the warning criteria. Common option for all checks.\n"
-					"crit_list\t A list of all items which matched the critical criteria. Common option for all checks.\n"
-					"problem_list\t A list of all items which matched either the critical or the warning criteria. Common option for all checks.\n"
-					"detail_list\t A special list with critical, then warning and finally ok. Common option for all checks.\n"
-					"status\t The returned status (OK/WARN/CRIT/UNKNOWN). Common option for all checks.\n";
+			std::map<std::string,std::string> get_filter_syntax() const {
+				std::map<std::string, std::string> ret;
+				ret["count"] = "Number of items matching the filter. Common option for all checks.";
+				ret["total"] = "Total number of items. Common option for all checks.";
+				ret["ok_count"] = "Number of items matched the ok criteria. Common option for all checks.";
+				ret["warn_count"] = "Number of items matched the warning criteria. Common option for all checks.";
+				ret["crit_count"] = "Number of items matched the critical criteria. Common option for all checks.";
+				ret["problem_count"] = "Number of items matched either warning or critical criteria. Common option for all checks.";
+				ret["list"] = "A list of all items which matched the filter. Common option for all checks.";
+				ret["ok_list"] = "A list of all items which matched the ok criteria. Common option for all checks.";
+				ret["warn_list"] = "A list of all items which matched the warning criteria. Common option for all checks.";
+				ret["crit_list"] = "A list of all items which matched the critical criteria. Common option for all checks.";
+				ret["problem_list"] = "A list of all items which matched either the critical or the warning criteria. Common option for all checks.";
+				ret["detail_list"] = "A special list with critical, then warning and finally ok. Common option for all checks.";
+				ret["status"] = "The returned status (OK/WARN/CRIT/UNKNOWN). Common option for all checks.";
+				return ret;
 			}
 
 			bool has_variable(const std::string &name) {
@@ -563,15 +567,15 @@ namespace parsers {
 
 			registry_type registry_;
 
-			std::string get_filter_syntax() const {
-				std::stringstream ss;
+			std::map<std::string, std::string> get_filter_syntax() const {
+				std::map<std::string, std::string> ret;
 				BOOST_FOREACH(const typename registry_type::variable_type::value_type &var, registry_.variables) {
-					ss << var.first << "\t" << var.second->description << "\n";
+					ret[var.first] = var.second->description;
 				}
 				BOOST_FOREACH(const typename registry_type::function_type::value_type &var, registry_.functions) {
-					ss << var.first << "()\t" << var.second->description << "\n";
+					ret[var.first + "()"] = var.second->description;
 				}
-				return ss.str();
+				return ret;
 			}
 
 			virtual bool can_convert(std::string name, parsers::where::node_type subject, parsers::where::value_type to) {

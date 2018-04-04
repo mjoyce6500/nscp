@@ -1,20 +1,35 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
+
+#include <parsers/where.hpp>
+#include <parsers/where/node.hpp>
+#include <parsers/where/engine.hpp>
+#include <parsers/filter/modern_filter.hpp>
+#include <parsers/where/filter_handler_impl.hpp>
+#include <parsers/helpers.hpp>
+
+#include <error/error.hpp>
+
+#include <str/format.hpp>
+#include <str/utils.hpp>
 
 #ifdef WIN32
 #include <Windows.h>
@@ -23,19 +38,11 @@
 #include <map>
 #include <string>
 
-#include <parsers/where.hpp>
 #include <boost/optional.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/filesystem.hpp>
 
-#include <error.hpp>
-#include <format.hpp>
 
-#include <parsers/where/node.hpp>
-#include <parsers/where/engine.hpp>
-#include <parsers/filter/modern_filter.hpp>
-#include <parsers/where/filter_handler_impl.hpp>
-#include <parsers/helpers.hpp>
 
 namespace file_filter {
 	struct file_object_exception : public std::exception {
@@ -100,13 +107,13 @@ namespace file_filter {
 		std::string get_path(parsers::where::evaluation_context) { return path.string(); }
 
 		long long get_creation() {
-			return strEx::filetime_to_time(ullCreationTime);
+			return str::format::filetime_to_time(ullCreationTime);
 		}
 		long long get_access() {
-			return strEx::filetime_to_time(ullLastAccessTime);
+			return str::format::filetime_to_time(ullLastAccessTime);
 		}
 		long long get_write() {
-			return strEx::filetime_to_time(ullLastWriteTime);
+			return str::format::filetime_to_time(ullLastWriteTime);
 		}
 		long long get_age() {
 			long long now = parsers::where::constants::get_now();
@@ -130,22 +137,22 @@ namespace file_filter {
 		}
 
 		std::string get_creation_su() {
-			return format::format_filetime(ullCreationTime);
+			return str::format::format_filetime(ullCreationTime);
 		}
 		std::string get_access_su() {
-			return format::format_filetime(ullLastAccessTime);
+			return str::format::format_filetime(ullLastAccessTime);
 		}
 		std::string get_written_su() {
-			return format::format_filetime(ullLastWriteTime);
+			return str::format::format_filetime(ullLastWriteTime);
 		}
 		std::string get_creation_sl() {
-			return format::format_filetime(to_local_time(ullCreationTime));
+			return str::format::format_filetime(to_local_time(ullCreationTime));
 		}
 		std::string get_access_sl() {
-			return format::format_filetime(to_local_time(ullLastAccessTime));
+			return str::format::format_filetime(to_local_time(ullLastAccessTime));
 		}
 		std::string get_written_sl() {
-			return format::format_filetime(to_local_time(ullLastWriteTime));
+			return str::format::format_filetime(to_local_time(ullLastWriteTime));
 		}
 		unsigned long long get_type();
 		std::string get_type_su();

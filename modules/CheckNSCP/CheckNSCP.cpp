@@ -1,44 +1,43 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CheckNSCP.h"
-
-#include <boost/filesystem.hpp>
-#include <boost/date_time.hpp>
-
-#include <file_helpers.hpp>
-#include <unicode_char.hpp>
-#include <format.hpp>
-#include <file_helpers.hpp>
-#include <common.hpp>
-#include <config.h>
 
 #include <nscapi/nscapi_protobuf_functions.hpp>
 #include <nscapi/nscapi_program_options.hpp>
 #include <nscapi/nscapi_helper_singleton.hpp>
 #include <nscapi/macros.hpp>
-#include <error.hpp>
+#include <nsclient/nsclient_exception.hpp>
 
 #include <parsers/filter/modern_filter.hpp>
 #include <parsers/filter/cli_helper.hpp>
 #include <parsers/where/filter_handler_impl.hpp>
 #include <parsers/where/helpers.hpp>
 
-
 #include <nscapi/nscapi_settings_helper.hpp>
+
+#include <file_helpers.hpp>
+#include <str/format.hpp>
+#include <config.h>
+
+#include <boost/filesystem.hpp>
+#include <boost/date_time.hpp>
 
 namespace sh = nscapi::settings_helper;
 namespace po = boost::program_options;
@@ -120,21 +119,21 @@ struct nscp_version {
 		return *this;
 	}
 	nscp_version(std::string v) {
-		boost::tuple<std::string,std::string> v2 = strEx::s::split2(v, " ");
-		date = v2.get<1>();
-		std::list<std::string> vl = strEx::s::splitEx(v2.get<0>(), ".");
+		str::utils::token v2 = str::utils::split2(v, " ");
+		date = v2.second;
+		std::list<std::string> vl = str::utils::split_lst(v2.first, ".");
 		if (vl.size() != 4)
-			throw nscp_exception("Failed to parse version: " + v);
-		release = strEx::s::stox<int>(vl.front()); vl.pop_front();
-		major_version = strEx::s::stox<int>(vl.front()); vl.pop_front();
-		minor_version = strEx::s::stox<int>(vl.front()); vl.pop_front();
-		build = strEx::s::stox<int>(vl.front());
+			throw nsclient::nsclient_exception("Failed to parse version: " + v);
+		release = str::stox<int>(vl.front()); vl.pop_front();
+		major_version = str::stox<int>(vl.front()); vl.pop_front();
+		minor_version = str::stox<int>(vl.front()); vl.pop_front();
+		build = str::stox<int>(vl.front());
 	}
 	std::string to_string() const {
-		return strEx::s::xtos(release) + "."
-			+ strEx::s::xtos(major_version) + "."
-			+ strEx::s::xtos(minor_version) + "."
-			+ strEx::s::xtos(build);
+		return str::xtos(release) + "."
+			+ str::xtos(major_version) + "."
+			+ str::xtos(minor_version) + "."
+			+ str::xtos(build);
 	}
 };
 
@@ -192,7 +191,7 @@ namespace check_nscp_version {
 
 		filter_type filter;
 		filter_helper.add_options("", "", "", filter.get_filter_syntax(), "ignored");
-		filter_helper.add_syntax("${status}: ${list}", filter.get_filter_syntax(), "${release}.${major}.${minor}.${build} (${date})", "version", "", "");
+		filter_helper.add_syntax("${status}: ${list}", "${release}.${major}.${minor}.${build} (${date})", "version", "", "");
 
 		if (!filter_helper.parse_options())
 			return;
@@ -215,7 +214,7 @@ void CheckNSCP::check_nscp_version(const Plugin::QueryRequestMessage::Request &r
 	nscp_version version;
 	try {
 		version = nscp_version(get_core()->getApplicationVersionString());
-	} catch (const nscp_exception &e) {
+	} catch (const nsclient::nsclient_exception &e) {
 		nscapi::protobuf::functions::set_response_bad(*response, "Failed to parse version: " + e.reason());
 		return;
 	} catch (const std::exception &e) {
@@ -233,23 +232,23 @@ void CheckNSCP::check_nscp(const Plugin::QueryRequestMessage::Request &request, 
 	response->set_result(Plugin::Common_ResultCode_OK);
 	std::string last, message;
 	int crash_count = get_crashes(crashFolder, last);
-	format::append_list(message, strEx::s::xtos(crash_count) + " crash(es)", std::string(", "));
+	str::format::append_list(message, str::xtos(crash_count) + " crash(es)", std::string(", "));
 	if (crash_count > 0) {
 		response->set_result(Plugin::Common_ResultCode_CRITICAL);
-		format::append_list(message, std::string("last crash: " + last), std::string(", "));
+		str::format::append_list(message, std::string("last crash: " + last), std::string(", "));
 	}
 
 	int err_count = get_errors(last);
-	format::append_list(message, strEx::s::xtos(err_count) + " error(s)", std::string(", "));
+	str::format::append_list(message, str::xtos(err_count) + " error(s)", std::string(", "));
 	if (err_count > 0) {
 		response->set_result(Plugin::Common_ResultCode_CRITICAL);
-		format::append_list(message, std::string("last error: " + last), std::string(", "));
+		str::format::append_list(message, std::string("last error: " + last), std::string(", "));
 	}
 	boost::posix_time::ptime end = boost::posix_time::microsec_clock::local_time();;
 	boost::posix_time::time_duration td = end - start_;
 
 	std::stringstream uptime;
 	uptime << "uptime " << td;
-	format::append_list(message, uptime.str(), std::string(", "));
+	str::format::append_list(message, uptime.str(), std::string(", "));
 	response->add_lines()->set_message(message);
 }

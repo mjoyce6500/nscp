@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "module.hpp"
@@ -116,12 +119,13 @@ namespace check_pdh {
 		bool reload = false;
 		bool check_average = false;
 		bool expand_instance = false;
+		bool ignore_errors = false;
 		std::string flags;
 		std::string type;
 
 		filter_type filter;
 		filter_helper.add_options("", "", "", filter.get_filter_syntax(), "unknown");
-		filter_helper.add_syntax("${status}: ${list}", filter.get_filter_syntax(), "${alias} = ${value}", "${alias}", "", "");
+		filter_helper.add_syntax("${status}: ${list}", "${alias} = ${value}", "${alias}", "", "");
 		filter_helper.get_desc().add_options()
 			("counter", po::value<std::vector<std::string>>(&counters), "Performance counter to check")
 			("expand-index", po::bool_switch(&expand_index), "Expand indexes in counter strings")
@@ -131,6 +135,7 @@ namespace check_pdh {
 			("time", po::value<std::vector<std::string>>(&times), "Timeframe to use for named rrd counters")
 			("flags", po::value<std::string>(&flags), "Extra flags to configure the counter (nocap100, 1000, noscale)")
 			("type", po::value<std::string>(&type)->default_value("large"), "Format of value (double, long, large)")
+			("ignore-errors", po::bool_switch(&ignore_errors), "If we should ignore errors when checking counters, for instance missing counters or invalid counters will return 0 instead of errors")
 			;
 
 		std::vector<std::string> extra;
@@ -217,8 +222,12 @@ namespace check_pdh {
 					has_counter = true;
 				}
 			} catch (const std::exception &e) {
-				NSC_LOG_ERROR_EXR("Failed to poll counter", e);
-				return nscapi::protobuf::functions::set_response_bad(*response, "Failed to add counter: " + utf8::utf8_from_native(e.what()));
+				if (!ignore_errors) {
+					NSC_LOG_ERROR_EXR("Failed to poll counter", e);
+					return nscapi::protobuf::functions::set_response_bad(*response, "Failed to add counter: " + utf8::utf8_from_native(e.what()));
+				} else {
+					NSC_DEBUG_MSG_STD("Ignoring counter failure: " + utf8::utf8_from_native(e.what()));
+				}
 			}
 		}
 		if (!free_counters.empty()) {
@@ -228,12 +237,15 @@ namespace check_pdh {
 					pdh.collect();
 					Sleep(1000);
 				}
-				//pdh.collect();
 				pdh.gatherData(expand_instance);
 				pdh.close();
 			} catch (const PDH::pdh_exception &e) {
-				NSC_LOG_ERROR_EXR("Failed to poll counter", e);
-				return nscapi::protobuf::functions::set_response_bad(*response, "Failed to poll counter: " + utf8::utf8_from_native(e.what()));
+				if (!ignore_errors) {
+					NSC_LOG_ERROR_EXR("Failed to poll counter", e);
+					return nscapi::protobuf::functions::set_response_bad(*response, "Failed to add counter: " + utf8::utf8_from_native(e.what()));
+				} else {
+					NSC_DEBUG_MSG_STD("Ignoring counter failure: " + utf8::utf8_from_native(e.what()));
+				}
 			}
 		}
 		BOOST_FOREACH(const counter_list::value_type &vc, named_counters) {
@@ -245,7 +257,7 @@ namespace check_pdh {
 					if (time.empty()) {
 						values = collector->get_value(vc.second);
 					} else {
-						values = collector->get_average(vc.second, strEx::stoui_as_time(time) / 1000);
+						values = collector->get_average(vc.second, str::format::stox_as_time_sec<long>(time, "s"));
 					}
 					if (values.empty())
 						return nscapi::protobuf::functions::set_response_bad(*response, "Failed to get value");

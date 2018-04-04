@@ -1,27 +1,32 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <boost/asio.hpp>
+#include <nscapi/nscapi_helper_singleton.hpp>
+#include <nscapi/macros.hpp>
 
 #include <socket/socket_helpers.hpp>
-#include <nscapi/nscapi_helper_singleton.hpp>
 
-#include <format.hpp>
+#include <str/format.hpp>
+
+#include <boost/asio.hpp>
 
 namespace syslog_client {
 	struct connection_data : public socket_helpers::connection_info {
@@ -131,12 +136,12 @@ namespace syslog_client {
 
 			BOOST_FOREACH(const ::Plugin::QueryResponseMessage_Response &p, request_message.payload()) {
 				boost::posix_time::ptime now = boost::posix_time::second_clock::local_time();
-				std::string date = format::format_date(now, "%b %e %H:%M:%S");
+				std::string date = str::format::format_date(now, "%b %e %H:%M:%S");
 				std::string tag = con.tag_syntax;
 				std::string message = con.message_syntax;
-				std::string nagios_msg = nscapi::protobuf::functions::query_data_to_nagios_string(p);
-				strEx::s::replace(message, "%message%", nagios_msg);
-				strEx::s::replace(tag, "%message%", nagios_msg);
+				std::string nagios_msg = nscapi::protobuf::functions::query_data_to_nagios_string(p, nscapi::protobuf::functions::no_truncation);
+				str::utils::replace(message, "%message%", nagios_msg);
+				str::utils::replace(tag, "%message%", nagios_msg);
 
 				std::string severity = con.severity;
 				if (p.result() == ::Plugin::Common_ResultCode_OK)

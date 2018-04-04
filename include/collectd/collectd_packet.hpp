@@ -1,30 +1,38 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <boost/optional.hpp>
-
 #include <types.hpp>
 #include <swap_bytes.hpp>
-#include <unicode_char.hpp>
+#include <str/utils.hpp>
+#include <str/xtos.hpp>
 #include <stdint.h>
+
+#include <boost/noncopyable.hpp>
+#include <boost/optional.hpp>
+#include <boost/foreach.hpp>
+#include <boost/tuple/tuple.hpp>
 
 #include <map>
 #include <list>
+#include <sstream>
 
 namespace collectd {
 	class data {
@@ -280,21 +288,21 @@ namespace collectd {
 		std::list<expanded_keys> expand_keyword(const std::string &keyword, const std::string &value);
 
 		void add_value(metric_container &metric, std::string value) {
-			boost::tuple<std::string, std::string> svalue = strEx::s::split2(value, ":");
-			if (svalue.get<0>() == "gauge") {
-				BOOST_FOREACH(const std::string &vkey, strEx::s::splitEx(svalue.get<1>(), ",")) {
+			str::utils::token svalue = str::utils::split2(value, ":");
+			if (svalue.first == "gauge") {
+				BOOST_FOREACH(const std::string &vkey, str::utils::split_lst(svalue.second, ",")) {
 					if (vkey.size() > 0 && vkey[0] >= '0' && vkey[0] <= '9')
-						metric.gauges.push_back(strEx::s::stox<double>(vkey, 0));
+						metric.gauges.push_back(str::stox<double>(vkey, 0));
 					else
-						metric.gauges.push_back(strEx::s::stox<double>(metrics[vkey], 0));
+						metric.gauges.push_back(str::stox<double>(metrics[vkey], 0));
 				}
 			}
-			if (svalue.get<0>() == "derive") {
-				std::string vkey = svalue.get<1>();
+			if (svalue.first == "derive") {
+				std::string vkey = svalue.second;
 				if (vkey.size() > 0 && vkey[0] >= '0' && vkey[0] <= '9')
-					metric.derives.push_back(strEx::s::stox<double>(svalue.get<1>(), 0));
+					metric.derives.push_back(str::stox<double>(svalue.second, 0));
 				else
-					metric.derives.push_back(strEx::s::stox<unsigned long long>(metrics[svalue.get<1>()], 0));
+					metric.derives.push_back(str::stox<unsigned long long>(metrics[svalue.second], 0));
 			}
 		}
 
@@ -323,15 +331,15 @@ namespace collectd {
 
 
 		void add_metric(std::string key, std::string value) {
-			boost::tuple<std::string, std::string> tag = strEx::s::split2(key, "/");
-			std::string plugin = tag.get<0>();
+			str::utils::token tag = str::utils::split2(key, "/");
+			std::string plugin = tag.first;
 			boost::optional<std::string> p_instance;
 			std::string::size_type pos = plugin.find("-");
 			if (pos != std::string::npos) {
 				p_instance = plugin.substr(pos + 1);
 				plugin = plugin.substr(0, pos);
 			}
-			std::string tpe = tag.get<1>();
+			std::string tpe = tag.second;
 			boost::optional<std::string> t_instance;
 			pos = tpe.find("-");
 			if (pos != std::string::npos) {

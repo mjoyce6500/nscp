@@ -1,27 +1,31 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
+#include <nscapi/nscapi_core_wrapper.hpp>
+#include <nscapi/dll_defines.hpp>
+
 #include <string>
 #include <list>
 #include <vector>
-
-#include <nscapi/nscapi_core_wrapper.hpp>
-#include <nscapi/dll_defines.hpp>
+#include <map>
 
 namespace nscapi {
 	class NSCAPI_EXPORT core_helper {
@@ -35,15 +39,19 @@ namespace nscapi {
 		void register_event(const std::string event);
 		void register_channel(const std::string channel);
 
-		NSCAPI::nagiosReturn simple_query(const std::string command, const std::list<std::string> & argument, std::string & message, std::string & perf);
+		NSCAPI::nagiosReturn simple_query(const std::string command, const std::list<std::string> & argument, std::string & message, std::string & perf, std::size_t max_length);
 		bool simple_query(const std::string command, const std::list<std::string> & argument, std::string & result);
 		bool simple_query(const std::string command, const std::vector<std::string> & argument, std::string & result);
-		NSCAPI::nagiosReturn simple_query_from_nrpe(const std::string command, const std::string & buffer, std::string & message, std::string & perf);
+		NSCAPI::nagiosReturn simple_query_from_nrpe(const std::string command, const std::string & buffer, std::string & message, std::string & perf, std::size_t max_length);
 
 		NSCAPI::nagiosReturn exec_simple_command(const std::string target, const std::string command, const std::list<std::string> &argument, std::list<std::string> & result);
 		bool submit_simple_message(const std::string channel, const std::string source_id, const std::string target_id, const std::string command, const NSCAPI::nagiosReturn code, const std::string & message, const std::string & perf, std::string & response);
 		bool emit_event(const std::string module, const std::string event, std::list<std::map<std::string, std::string> > data, std::string &error);
 		bool emit_event(const std::string module, const std::string event, std::map<std::string, std::string> data, std::string &error);
+
+		typedef std::map<std::string, std::string> storage_map;
+		bool put_storage(std::string context, std::string key, std::string value, bool private_data, bool binary_data);
+		storage_map get_storage_strings(std::string context);
 
 		bool load_module(std::string name, std::string alias = "");
 		bool unload_module(std::string name);

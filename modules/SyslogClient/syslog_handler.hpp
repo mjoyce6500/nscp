@@ -1,23 +1,25 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include <utils.h>
-#include <strEx.h>
+#include <str/xtos.hpp>
 
 #include <socket/client.hpp>
 
@@ -58,28 +60,28 @@ namespace syslog_handler {
 
 			root_path.add_key()
 
-				("severity", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "severity", _1), "error"),
+				("severity", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "severity", _1), "error"),
 					"TODO", "")
 
-				("facility", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "facility", _1), "kernel"),
+				("facility", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "facility", _1), "kernel"),
 					"TODO", "")
 
-				("tag_syntax", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "tag syntax", _1), "NSCA"),
+				("tag_syntax", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "tag syntax", _1), "NSCA"),
 					"TODO", "")
 
-				("message_syntax", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "message syntax", _1), "%message%"),
+				("message_syntax", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "message syntax", _1), "%message%"),
 					"TODO", "")
 
-				("ok severity", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "ok severity", _1), "informational"),
+				("ok severity", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "ok severity", _1), "informational"),
 					"TODO", "")
 
-				("warning severity", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "warning severity", _1), "warning"),
+				("warning severity", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "warning severity", _1), "warning"),
 					"TODO", "")
 
-				("critical severity", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "critical severity", _1), "critical"),
+				("critical severity", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "critical severity", _1), "critical"),
 					"TODO", "")
 
-				("unknown severity", sh::string_fun_key<std::string>(boost::bind(&parent::set_property_string, this, "unknown severity", _1), "emergency"),
+				("unknown severity", sh::string_fun_key(boost::bind(&parent::set_property_string, this, "unknown severity", _1), "emergency"),
 					"TODO", "")
 				;
 		}

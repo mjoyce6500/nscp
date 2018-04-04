@@ -1,17 +1,20 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
@@ -25,6 +28,7 @@
 #include <parsers/where/helpers.hpp>
 
 #include <utf8.hpp>
+#include <str/format.hpp>
 
 namespace parsers {
 	namespace where {
@@ -172,25 +176,25 @@ namespace parsers {
 						m = (std::min)(m, max_value);
 					if (min_value > 0)
 						m = (std::min)(m, min_value);
-					active_unit = format::find_proper_unit_BKMG(m);
+					active_unit = str::format::find_proper_unit_BKMG(m);
 				}
 
 				performance_data::perf_value<double> double_data;
 				if (maxfun) {
 					if (max_value > 0)
-						double_data.maximum = format::convert_to_byte_units(max_value, active_unit);
+						double_data.maximum = str::format::convert_to_byte_units(max_value, active_unit);
 					else
 						double_data.maximum = max_value;
 				}
 				if (minfun) {
 					if (min_value > 0)
-						double_data.minimum = format::convert_to_byte_units(min_value, active_unit);
+						double_data.minimum = str::format::convert_to_byte_units(min_value, active_unit);
 					else
 						double_data.minimum = min_value;
 				}
-				double_data.warn = format::convert_to_byte_units(warn, active_unit);
-				double_data.crit = format::convert_to_byte_units(crit, active_unit);
-				double_data.value = format::convert_to_byte_units(current_value, active_unit);
+				double_data.warn = str::format::convert_to_byte_units(warn, active_unit);
+				double_data.crit = str::format::convert_to_byte_units(crit, active_unit);
+				double_data.value = str::format::convert_to_byte_units(current_value, active_unit);
 				performance_data data;
 				data.set(double_data);
 				data.alias = prefix + alias + suffix;
@@ -266,13 +270,13 @@ namespace parsers {
 						return value_container::create_nil();
 					}
 				}
-				context->error("Invalid type " + name_ + " we are int but wanted: " + strEx::s::xtos(vt));
+				context->error("Invalid type " + name_ + " we are int but wanted: " + str::xtos(vt));
 				return value_container::create_nil();
 			}
 			virtual std::string to_string(evaluation_context context) const {
 				native_context_type native_context = reinterpret_cast<native_context_type>(context.get());
 				if (native_context != NULL && fun && native_context->has_object()) {
-					return strEx::s::xtos(fun(native_context->get_object(), context));
+					return str::xtos(fun(native_context->get_object(), context));
 				}
 				return name_ + "?";
 			}
@@ -380,13 +384,13 @@ namespace parsers {
 						return value_container::create_nil();
 					}
 				}
-				context->error("Invalid type " + name_ + " we are float but wanted: " + strEx::s::xtos(vt));
+				context->error("Invalid type " + name_ + " we are float but wanted: " + str::xtos(vt));
 				return value_container::create_nil();
 			}
 			virtual std::string to_string(evaluation_context context) const {
 				native_context_type native_context = reinterpret_cast<native_context_type>(context.get());
 				if (native_context != NULL && fun && native_context->has_object()) {
-					return strEx::s::xtos(fun(native_context->get_object(), context));
+					return str::xtos(fun(native_context->get_object(), context));
 				}
 				return "(float)var:" + name_;
 			}
@@ -594,9 +598,9 @@ namespace parsers {
 						if (vt == type_string && s_fun)
 							return value_container::create_string(s_fun(native_context->get_object(), context));
 						if (vt == type_string && i_fun && (is_int() || !f_fun))
-							return value_container::create_string(strEx::s::xtos(i_fun(native_context->get_object(), context)));
+							return value_container::create_string(str::xtos(i_fun(native_context->get_object(), context)));
 						if (vt == type_string && f_fun)
-							return value_container::create_string(strEx::s::xtos(f_fun(native_context->get_object(), context)));
+							return value_container::create_string(str::xtos(f_fun(native_context->get_object(), context)));
 					} else {
 						context->warn("Failed to get " + name_ + " no object instance");
 						if (helpers::type_is_int(vt))
@@ -620,9 +624,9 @@ namespace parsers {
 					if (s_fun)
 						return s_fun(native_context->get_object(), context);
 					if (i_fun)
-						return strEx::s::xtos(i_fun(native_context->get_object(), context));
+						return str::xtos(i_fun(native_context->get_object(), context));
 					if (f_fun)
-						return strEx::s::xtos(f_fun(native_context->get_object(), context));
+						return str::xtos(f_fun(native_context->get_object(), context));
 				}
 				if (is_int())
 					return name_ + "?";
@@ -811,8 +815,8 @@ namespace parsers {
 				bool summary = false;
 				if (int_get_value(context, summary, value)) {
 					if (summary)
-						return strEx::s::xtos(value);
-					return strEx::s::xtos(value) + "?";
+						return str::xtos(value);
+					return str::xtos(value) + "?";
 				}
 				return name_ + "?";
 			}

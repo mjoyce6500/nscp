@@ -1,34 +1,40 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <boost/program_options.hpp>
-#include <boost/thread/thread.hpp>
-
 #include "CheckHelpers.h"
-#include <strEx.h>
-#include <time.h>
-#include <vector>
-#include <algorithm>
+
+#include <parsers/filter/cli_helper.hpp>
 
 #include <nscapi/nscapi_core_helper.hpp>
 #include <nscapi/nscapi_core_wrapper.hpp>
 #include <nscapi/nscapi_protobuf_functions.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
 #include <nscapi/nscapi_program_options.hpp>
 #include <nscapi/nscapi_settings_helper.hpp>
-#include <parsers/filter/cli_helper.hpp>
+
+#include <str/utils.hpp>
+
+#include <boost/program_options.hpp>
+#include <boost/thread/thread.hpp>
+
+#include <vector>
+#include <algorithm>
 
 namespace sh = nscapi::settings_helper;
 namespace po = boost::program_options;
@@ -209,7 +215,7 @@ void CheckHelpers::check_multi(const Plugin::QueryRequestMessage::Request &reque
 	response->set_result(Plugin::Common_ResultCode_OK);
 	BOOST_FOREACH(std::string command_line, arguments) {
 		std::list<std::string> args;
-		strEx::s::parse_command(command_line, args);
+		str::utils::parse_command(command_line, args);
 
 		if (args.size() == 0) {
 			return nscapi::program_options::invalid_syntax(desc, request.command(), "Missing command", *response);
@@ -419,45 +425,45 @@ namespace perf_filter {
 		}
 		std::string get_value() const {
 			if (data.has_bool_value())
-				return strEx::s::xtos(data.bool_value().value());
+				return str::xtos(data.bool_value().value());
 			if (data.has_float_value())
-				return strEx::s::xtos(data.float_value().value());
+				return str::xtos(data.float_value().value());
 			if (data.has_int_value())
-				return strEx::s::xtos(data.int_value().value());
+				return str::xtos(data.int_value().value());
 			if (data.has_string_value())
 				return data.string_value().value();
 			return "";
 		}
 		std::string get_warn() const {
 			if (data.has_bool_value())
-				return strEx::s::xtos(data.bool_value().warning());
+				return str::xtos(data.bool_value().warning());
 			if (data.has_float_value())
-				return strEx::s::xtos(data.float_value().warning());
+				return str::xtos(data.float_value().warning());
 			if (data.has_int_value())
-				return strEx::s::xtos(data.int_value().warning());
+				return str::xtos(data.int_value().warning());
 			return "";
 		}
 		std::string get_crit() const {
 			if (data.has_bool_value())
-				return strEx::s::xtos(data.bool_value().critical());
+				return str::xtos(data.bool_value().critical());
 			if (data.has_float_value())
-				return strEx::s::xtos(data.float_value().critical());
+				return str::xtos(data.float_value().critical());
 			if (data.has_int_value())
-				return strEx::s::xtos(data.int_value().critical());
+				return str::xtos(data.int_value().critical());
 			return "";
 		}
 		std::string get_max() const {
 			if (data.has_float_value())
-				return strEx::s::xtos(data.float_value().maximum());
+				return str::xtos(data.float_value().maximum());
 			if (data.has_int_value())
-				return strEx::s::xtos(data.int_value().maximum());
+				return str::xtos(data.int_value().maximum());
 			return "";
 		}
 		std::string get_min() const {
 			if (data.has_float_value())
-				return strEx::s::xtos(data.float_value().minimum());
+				return str::xtos(data.float_value().minimum());
 			if (data.has_int_value())
-				return strEx::s::xtos(data.int_value().minimum());
+				return str::xtos(data.int_value().minimum());
 			return "";
 		}
 	};
@@ -493,7 +499,7 @@ void CheckHelpers::render_perf(const Plugin::QueryRequestMessage::Request &reque
 	po::options_description desc = nscapi::program_options::create_desc(request);
 	perf_filter::filter filter;
 	filter_helper.add_options("", "", "", filter.get_filter_syntax(), "unknown");
-	filter_helper.add_syntax("%(status): %(message) %(list)", filter.get_filter_syntax(), "%(key)\t%(value)\t%(unit)\t%(warn)\t%(crit)\t%(min)\t%(max)\n", "%(key)", "", "");
+	filter_helper.add_syntax("%(status): %(message) %(list)", "%(key)\t%(value)\t%(unit)\t%(warn)\t%(crit)\t%(min)\t%(max)\n", "%(key)", "", "");
 	filter_helper.get_desc().add_options()
 		("command", po::value<std::string>(&command), "Wrapped command to execute")
 		("arguments", po::value<std::vector<std::string> >(&arguments), "List of arguments (for wrapped command)")
@@ -533,7 +539,7 @@ void CheckHelpers::xform_perf(const Plugin::QueryRequestMessage::Request &reques
 	desc.add_options()
 		("command", po::value<std::string>(&command), "Wrapped command to execute")
 		("arguments", po::value<std::vector<std::string> >(&arguments), "List of arguments (for wrapped command)")
-		("mode", po::value<std::string>(&mode), "Transformation mode (currently only supports extract)")
+		("mode", po::value<std::string>(&mode), "Transformation mode: extract to fetch data or minmax to add missing min/max")
 		("field", po::value<std::string>(&field), "Field to work with (value, warn, crit, max, min)")
 		("replace", po::value<std::string>(&replace), "Replace expression for the alias")
 		;
@@ -548,12 +554,14 @@ void CheckHelpers::xform_perf(const Plugin::QueryRequestMessage::Request &reques
 		return nscapi::program_options::invalid_syntax(desc, request.command(), "Missing command", *response);
 	simple_query(command, arguments, response);
 
-	std::vector<std::string> repl;
-	boost::split(repl, replace, boost::is_any_of("="));
-	if (repl.size() != 2)
-		return nscapi::program_options::invalid_syntax(desc, request.command(), "Invalid syntax replace string", *response);
 
 	if (mode == "extract") {
+
+		std::vector<std::string> repl;
+		boost::split(repl, replace, boost::is_any_of("="));
+		if (repl.size() != 2)
+			return nscapi::program_options::invalid_syntax(desc, request.command(), "Invalid syntax replace string", *response);
+
 		for (int i = 0; i < response->lines_size(); i++) {
 			::Plugin::QueryResponseMessage_Response_Line* line = response->mutable_lines(i);
 			std::vector<Plugin::Common::PerformanceData> perf;
@@ -582,6 +590,24 @@ void CheckHelpers::xform_perf(const Plugin::QueryRequestMessage::Request &reques
 			}
 			BOOST_FOREACH(const Plugin::Common::PerformanceData &p, perf) {
 				line->add_perf()->CopyFrom(p);
+			}
+		}
+	} else if (mode == "minmax") {
+		for (int i = 0; i < response->lines_size(); i++) {
+			::Plugin::QueryResponseMessage_Response_Line* line = response->mutable_lines(i);
+			for (int i=0;i<line->perf_size();i++) {
+				Plugin::Common_PerformanceData *np = line->mutable_perf(i);
+				if (np->has_int_value()) {
+					if (np->int_value().unit() == "%") {
+						np->mutable_int_value()->set_maximum(100);
+						np->mutable_int_value()->set_minimum(0);
+					}
+				} else if (np->has_float_value()) {
+					if (np->float_value().unit() == "%") {
+						np->mutable_float_value()->set_maximum(100);
+						np->mutable_float_value()->set_minimum(0);
+					}
+				}
 			}
 		}
 	} else {

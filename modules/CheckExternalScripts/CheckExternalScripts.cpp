@@ -1,47 +1,47 @@
 /*
- * Copyright 2004-2016 The NSClient++ Authors - https://nsclient.org
+ * Copyright (C) 2004-2016 Michael Medin
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * This file is part of NSClient++ - https://nsclient.org
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ * NSClient++ is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * NSClient++ is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with NSClient++.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "CheckExternalScripts.h"
-#include <time.h>
-#include <string>
+#include "extscr_cli.h"
+#include "script_provider.hpp"
 
-#include <strEx.h>
+#include <process/execute_process.hpp>
+
+#include <nscapi/nscapi_core_helper.hpp>
+#include <nscapi/nscapi_protobuf_functions.hpp>
+#include <nscapi/nscapi_protobuf_nagios.hpp>
+#include <nscapi/nscapi_settings_helper.hpp>
+#include <nscapi/nscapi_protobuf.hpp>
+
+#include <config.h>
+#include <str/utils.hpp>
+#include <str/format.hpp>
 #include <file_helpers.hpp>
-#include <common.hpp>
 
 #include <boost/regex.hpp>
 #include <boost/filesystem.hpp>
-
-#include <nscapi/functions.hpp>
-#include <nscapi/nscapi_core_helper.hpp>
-#include <nscapi/nscapi_protobuf_functions.hpp>
-#include <nscapi/nscapi_program_options.hpp>
-#include <nscapi/nscapi_settings_helper.hpp>
-
-#include <nscapi/nscapi_protobuf.hpp>
-
-#include <json_spirit.h>
-
-#include <settings/config.hpp>
-
-#include <file_helpers.hpp>
+#include <boost/foreach.hpp>
 
 namespace sh = nscapi::settings_helper;
 
-CheckExternalScripts::CheckExternalScripts() {}
+CheckExternalScripts::CheckExternalScripts() 
+{}
 CheckExternalScripts::~CheckExternalScripts() {}
 
 void CheckExternalScripts::addAllScriptsFrom(std::string str_path) {
@@ -74,8 +74,12 @@ void CheckExternalScripts::addAllScriptsFrom(std::string str_path) {
 	for (boost::filesystem::directory_iterator itr(path); itr != end_itr; ++itr) {
 		if (!is_directory(itr->status())) {
 			std::string name = file_helpers::meta::get_filename(itr->path());
+			std::string cmd = itr->path().string();
+			if (allowArgs_) {
+				cmd += " %ARGS%";
+			}
 			if (regex_match(name, re))
-				add_command(name, itr->path().string());
+				add_command(name, cmd);
 		}
 	}
 }
@@ -85,18 +89,20 @@ bool CheckExternalScripts::loadModuleEx(std::string alias, NSCAPI::moduleLoadMod
 		sh::settings_registry settings(get_settings_proxy());
 		settings.set_alias(alias, "external scripts");
 
-		commands_.set_path(settings.alias().get_settings_path("scripts"));
 		aliases_.set_path(settings.alias().get_settings_path("alias"));
 		std::string wrappings_path = settings.alias().get_settings_path("wrappings");
+		boost::filesystem::path scriptRoot;
+		std::string scriptDirectory;
+		std::map<std::string, std::string> wrappings;
 
 		settings.alias().add_path_to_settings()
 
-			("wrappings", sh::string_map_path(&wrappings_)
-				, "EXTERNAL SCRIPT WRAPPINGS SECTION", "A list of templates for wrapped scripts.\n%SCRIPT% will be replaced by the actual script an %ARGS% will be replaced by any given arguments.",
+			("wrappings", sh::string_map_path(&wrappings)
+				, "Script wrappings", "A list of templates for defining script commands.\nEnter any command line here and they will be expanded by scripts placed under the wrapped scripts section. %SCRIPT% will be replaced by the actual script an %ARGS% will be replaced by any given arguments.",
 				"WRAPPING", "An external script wrapping")
 
 			("alias", sh::fun_values_path(boost::bind(&CheckExternalScripts::add_alias, this, _1, _2)),
-				"ALIAS SECTION", "A list of aliases available.\n"
+				"Command aliases", "A list of aliases for already defined commands (with arguments).\n"
 				"An alias is an internal command that has been predefined to provide a single command without arguments. Be careful so you don't create loops (ie check_loop=check_a, check_a=check_loop)",
 				"ALIAS", "Query alias")
 
@@ -106,20 +112,20 @@ bool CheckExternalScripts::loadModuleEx(std::string alias, NSCAPI::moduleLoadMod
 		settings.notify();
 		settings.clear();
 
-		if (wrappings_.find("ps1") == wrappings_.end()) {
-			wrappings_["ps1"] = "cmd /c echo If (-Not (Test-Path \"scripts\\%SCRIPT%\") ) { Write-Host \"UNKNOWN: Script `\"%SCRIPT%`\" not found.\"; exit(3) }; scripts\\%SCRIPT% $ARGS$; exit($lastexitcode) | powershell.exe /noprofile -command -";
-			settings.register_key(wrappings_path, "ps1", NSCAPI::key_string, "POWERSHELL WRAPPING", "", "", false);
-			settings.set_static_key(wrappings_path, "ps1", wrappings_["ps1"]);
+		if (wrappings.find("ps1") == wrappings.end()) {
+			wrappings["ps1"] = "cmd /c echo If (-Not (Test-Path \"scripts\\%SCRIPT%\") ) { Write-Host \"UNKNOWN: Script `\"%SCRIPT%`\" not found.\"; exit(3) }; scripts\\%SCRIPT% $ARGS$; exit($lastexitcode) | powershell.exe /noprofile -command -";
+			settings.register_key(wrappings_path, "ps1", NSCAPI::key_string, "POWERSHELL WRAPPING", "Command line used for executing wrapped ps1 (powershell) scripts", "cmd /c echo If (-Not (Test-Path \"scripts\\%SCRIPT%\") ) { Write-Host \"UNKNOWN: Script `\"%SCRIPT%`\" not found.\"; exit(3) }; scripts\\%SCRIPT% $ARGS$; exit($lastexitcode) | powershell.exe /noprofile -command -", false);
+			settings.set_static_key(wrappings_path, "ps1", wrappings["ps1"]);
 		}
-		if (wrappings_.find("vbs") == wrappings_.end()) {
-			wrappings_["vbs"] = "cscript.exe //T:30 //NoLogo scripts\\\\lib\\\\wrapper.vbs %SCRIPT% %ARGS%";
-			settings.register_key(wrappings_path, "vbs", NSCAPI::key_string, "VISUAL BASIC WRAPPING", "", "", false);
-			settings.set_static_key(wrappings_path, "vbs", wrappings_["vbs"]);
+		if (wrappings.find("vbs") == wrappings.end()) {
+			wrappings["vbs"] = "cscript.exe //T:30 //NoLogo scripts\\\\lib\\\\wrapper.vbs %SCRIPT% %ARGS%";
+			settings.register_key(wrappings_path, "vbs", NSCAPI::key_string, "Visual basic script", "Command line used for wrapped vbs scripts", "cscript.exe //T:30 //NoLogo scripts\\\\lib\\\\wrapper.vbs %SCRIPT% %ARGS%", false);
+			settings.set_static_key(wrappings_path, "vbs", wrappings["vbs"]);
 		}
-		if (wrappings_.find("bat") == wrappings_.end()) {
-			wrappings_["bat"] = "scripts\\\\%SCRIPT% %ARGS%";
-			settings.register_key(wrappings_path, "bat", NSCAPI::key_string, "BATCH FILE WRAPPING", "", "", false);
-			settings.set_static_key(wrappings_path, "bat", wrappings_["bat"]);
+		if (wrappings.find("bat") == wrappings.end()) {
+			wrappings["bat"] = "scripts\\\\%SCRIPT% %ARGS%";
+			settings.register_key(wrappings_path, "bat", NSCAPI::key_string, "Batch file", "Command used for executing wrapped batch files", "scripts\\\\%SCRIPT% %ARGS%", false);
+			settings.set_static_key(wrappings_path, "bat", wrappings["bat"]);
 		}
 
 		if (aliases_.empty()) {
@@ -148,31 +154,41 @@ bool CheckExternalScripts::loadModuleEx(std::string alias, NSCAPI::moduleLoadMod
 			//			add_alias("alias_updates", "check_updates -warning 0 -critical 0");
 		}
 
-		settings.alias().add_path_to_settings()
-			("EXTERNAL SCRIPT SECTION", "Section for external scripts configuration options (CheckExternalScripts).")
-
-			("scripts", sh::fun_values_path(boost::bind(&CheckExternalScripts::add_command, this, _1, _2)),
-				"SCRIPT SECTION", "A list of scripts available to run from the CheckExternalScripts module. Syntax is: <command>=<script> <arguments>",
-				"SCRIPT", "For more configuration options add a dedicated section (if you add a new section you can customize the user and various other advanced features)")
-
-			("wrapped scripts", sh::fun_values_path(boost::bind(&CheckExternalScripts::add_wrapping, this, _1, _2)),
-				"WRAPPED SCRIPTS SECTION", "A list of wrapped scripts (ie. scruts using a template mechanism). The template used will be defined by the extension of the script.",
-				"WRAPPED SCRIPT", "A wrapped script defenitions")
-
-			;
-
 		settings.alias().add_key_to_settings()
 			("timeout", sh::uint_key(&timeout, 60),
-				"COMMAND TIMEOUT", "The maximum time in seconds that a command can execute. (if more then this execution will be aborted). NOTICE this only affects external commands not internal ones.")
+				"Command timeout", "The maximum time in seconds that a command can execute. (if more then this execution will be aborted). NOTICE this only affects external commands not internal ones.")
 
 			("allow arguments", sh::bool_key(&allowArgs_, false),
-				"COMMAND ARGUMENT PROCESSING", "This option determines whether or not the we will allow clients to specify arguments to commands that are executed.")
+				"Allow arguments when executing external scripts", "This option determines whether or not the we will allow clients to specify arguments to commands that are executed.")
 
 			("allow nasty characters", sh::bool_key(&allowNasty_, false),
-				"COMMAND ALLOW NASTY META CHARS", "This option determines whether or not the we will allow clients to specify nasty (as in |`&><'\"\\[]{}) characters in arguments.")
+				"Allow certain potentially dangerous characters in arguments", "This option determines whether or not the we will allow clients to specify nasty (as in |`&><'\"\\[]{}) characters in arguments.")
 
-			("script path", sh::string_key(&scriptDirectory_),
-				"SCRIPT DIRECTORY", "Load all scripts in a directory and use them as commands. Probably dangerous but useful if you have loads of scripts :)")
+			("script path", sh::string_key(&scriptDirectory),
+			"Load all scripts in a given folder", "Load all scripts in a given directory and use them as commands.")
+
+			("script root", sh::path_key(&scriptRoot, "${scripts}"),
+			"Script root folder", "Root path where all scripts are contained (You can not upload/download scripts outside this folder).")
+			;
+
+		settings.register_all();
+		settings.notify();
+		settings.clear();
+		provider_.reset(new script_provider(get_id(), get_core(), settings.alias().get_settings_path("scripts"), scriptRoot, wrappings));
+
+
+		settings.alias().add_path_to_settings()
+
+			("External script settings", "General settings for the external scripts module (CheckExternalScripts).")
+
+			("scripts", sh::fun_values_path(boost::bind(&CheckExternalScripts::add_command, this, _1, _2)),
+			"External scripts", "A list of scripts available to run from the CheckExternalScripts module. Syntax is: `command=script arguments`",
+			"SCRIPT", "For more configuration options add a dedicated section (if you add a new section you can customize the user and various other advanced features)")
+
+			("wrapped scripts", sh::fun_values_path(boost::bind(&CheckExternalScripts::add_wrapping, this, _1, _2)),
+			"Wrapped scripts", "A list of wrapped scripts (ie. script using a template mechanism).\nThe template used will be defined by the extension of the script. Thus a foo.ps1 will use the ps1 wrapping from the wrappings section.",
+			"WRAPPED SCRIPT", "A wrapped script definitions")
+
 			;
 
 
@@ -208,24 +224,16 @@ bool CheckExternalScripts::loadModuleEx(std::string alias, NSCAPI::moduleLoadMod
 		settings.register_all();
 		settings.notify();
 
-		std::string scripts_path = settings.alias().get_settings_path("scripts");
-		std::string alias_path = settings.alias().get_settings_path("alias");
-
-		commands_.add_samples(get_settings_proxy());
-		commands_.add_missing(get_settings_proxy(), "default", "");
+		if (!scriptDirectory.empty()) {
+			addAllScriptsFrom(scriptDirectory);
+		}
 
 		aliases_.add_samples(get_settings_proxy());
 		aliases_.add_missing(get_settings_proxy(), "default", "");
 
-		if (!scriptDirectory_.empty()) {
-			addAllScriptsFrom(scriptDirectory_);
-		}
 		root_ = get_base_path();
 
 		nscapi::core_helper core(get_core(), get_id());
-		BOOST_FOREACH(const boost::shared_ptr<commands::command_object> &o, commands_.get_object_list()) {
-			core.register_alias(o->get_alias(), "External script: " + o->command);
-		}
 		BOOST_FOREACH(const boost::shared_ptr<alias::command_object> &o, aliases_.get_object_list()) {
 			core.register_alias(o->get_alias(), "Alias for: " + o->command);
 		}
@@ -249,17 +257,15 @@ bool CheckExternalScripts::commandLineExec(const int target_mode, const Plugin::
 	else if (command.empty() && target_mode == NSCAPI::target_module)
 		command = "help";
 	try {
-		if (command == "add")
-			add_script(request, response);
-		else if (command == "install")
-			configure(request, response);
-		else if (command == "list")
-			list(request, response);
-		else if (command == "help") {
-			nscapi::protobuf::functions::set_response_bad(*response, "Usage: nscp ext-scr [add|list|install] --help");
-		} else
-			return false;
-		return true;
+		if (command == "help") {
+			nscapi::protobuf::functions::set_response_bad(*response, "Usage: nscp ext-scr [add|list|show|install|delete] --help");
+		} else {
+			if (!provider_) {
+				nscapi::protobuf::functions::set_response_bad(*response, "Failed to create provider");
+			}
+			extscr_cli client(provider_);
+			return client.run(command, request, response);
+		}
 	} catch (const std::exception &e) {
 		nscapi::protobuf::functions::set_response_bad(*response, "Error: " + utf8::utf8_from_native(e.what()));
 	} catch (...) {
@@ -268,238 +274,13 @@ bool CheckExternalScripts::commandLineExec(const int target_mode, const Plugin::
 	return false;
 }
 
-void CheckExternalScripts::list(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response) {
-	namespace po = boost::program_options;
-	namespace pf = nscapi::protobuf::functions;
-	po::variables_map vm;
-	po::options_description desc;
-	bool json = false, query = false, lib = false;
-
-	desc.add_options()
-		("help", "Show help.")
-
-		("json", po::bool_switch(&json),
-			"Return the list in json format.")
-		("query", po::bool_switch(&query),
-			"List queries instead of scripts (for aliases).")
-		("include-lib", po::bool_switch(&lib),
-			"Do not ignore any lib folders.")
-
-		;
-
-	try {
-		nscapi::program_options::basic_command_line_parser cmd(request);
-		cmd.options(desc);
-
-		po::parsed_options parsed = cmd.run();
-		po::store(parsed, vm);
-		po::notify(vm);
-	} catch (const std::exception &e) {
-		return nscapi::program_options::invalid_syntax(desc, request.command(), "Invalid command line: " + utf8::utf8_from_native(e.what()), *response);
-	}
-
-	if (vm.count("help")) {
-		nscapi::protobuf::functions::set_response_good(*response, nscapi::program_options::help(desc));
-		return;
-	}
-	std::string resp;
-	json_spirit::Array data;
-
-	if (query) {
-		Plugin::RegistryRequestMessage rrm;
-		Plugin::RegistryResponseMessage response;
-		nscapi::protobuf::functions::create_simple_header(rrm.mutable_header());
-		Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
-		payload->mutable_inventory()->set_fetch_all(true);
-		payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_QUERY);
-		std::string pb_response;
-		get_core()->registry_query(rrm.SerializeAsString(), pb_response);
-		response.ParseFromString(pb_response);
-		BOOST_FOREACH(const ::Plugin::RegistryResponseMessage_Response &p, response.payload()) {
-			BOOST_FOREACH(const ::Plugin::RegistryResponseMessage_Response_Inventory &i, p.inventory()) {
-				if (json) {
-					json_spirit::Value v = i.name();
-					data.push_back(v);
-				} else {
-					resp += i.name() + "\n";
-				}
-			}
-		}
-	} else {
-		boost::filesystem::path dir = get_core()->expand_path("${scripts}");
-		boost::filesystem::path rel = get_core()->expand_path("${base-path}");
-		boost::filesystem::recursive_directory_iterator iter(dir), eod;
-		BOOST_FOREACH(boost::filesystem::path const& i, std::make_pair(iter, eod)) {
-			std::string s = i.string();
-			if (boost::algorithm::starts_with(s, rel.string()))
-				s = s.substr(rel.string().size());
-			if (s.size() == 0)
-				continue;
-			if (s[0] == '\\' || s[0] == '/')
-				s = s.substr(1);
-			boost::filesystem::path clone = i.parent_path();
-			if (boost::filesystem::is_regular_file(i) && !boost::algorithm::contains(clone.string(), "lib")) {
-				if (json) {
-					json_spirit::Value v = s;
-					data.push_back(v);
-				} else {
-					resp += s + "\n";
-				}
-
-			}
-		}
-	}
-	if (json)
-		resp = json_spirit::write(data, json_spirit::raw_utf8);
-
-	nscapi::protobuf::functions::set_response_good(*response, resp);
-}
-void CheckExternalScripts::add_script(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response) {
-	namespace po = boost::program_options;
-	namespace pf = nscapi::protobuf::functions;
-	po::variables_map vm;
-	po::options_description desc;
-	std::string script, arguments, alias;
-	bool wrapped = false, list = false;
-
-	desc.add_options()
-		("help", "Show help.")
-
-		("script", po::value<std::string>(&script),
-			"Script to add")
-
-		("alias", po::value<std::string>(&alias),
-			"Name of command to execute script (defaults to basename of script)")
-
-		("arguments", po::value<std::string>(&arguments),
-			"Arguments for script.")
-
-		("list", po::bool_switch(&list),
-			"List all scripts in the scripts folder.")
-
-		("wrapped", po::bool_switch(&wrapped),
-			"Add this to add a wrapped script such as ps1, vbs or similar..")
-
-		;
-
-	try {
-		nscapi::program_options::basic_command_line_parser cmd(request);
-		cmd.options(desc);
-
-		po::parsed_options parsed = cmd.run();
-		po::store(parsed, vm);
-		po::notify(vm);
-	} catch (const std::exception &e) {
-		return nscapi::program_options::invalid_syntax(desc, request.command(), "Invalid command line: " + utf8::utf8_from_native(e.what()), *response);
-	}
-
-	if (vm.count("help")) {
-		nscapi::protobuf::functions::set_response_good(*response, nscapi::program_options::help(desc));
-		return;
-	}
-	boost::filesystem::path file = get_core()->expand_path(script);
-	if (!wrapped) {
-		if (!boost::filesystem::is_regular(file)) {
-			nscapi::protobuf::functions::set_response_bad(*response, "Script not found: " + file.string());
-			return;
-		}
-	}
-	if (alias.empty()) {
-		alias = boost::filesystem::basename(file.filename());
-	}
-
-	nscapi::protobuf::functions::settings_query s(get_id());
-	if (!wrapped)
-		s.set("/settings/external scripts/scripts", alias, script + " " + arguments);
-	else
-		s.set("/settings/external scripts/wrapped scripts", alias, script + " " + arguments);
-	s.set(MAIN_MODULES_SECTION, "CheckExternalScripts", "enabled");
-	s.save();
-	get_core()->settings_query(s.request(), s.response());
-	if (!s.validate_response()) {
-		nscapi::protobuf::functions::set_response_bad(*response, s.get_response_error());
-		return;
-	}
-	std::string actual = "";
-	if (wrapped)
-		actual = "\nActual command is: " + generate_wrapped_command(script + " " + arguments);
-	nscapi::protobuf::functions::set_response_good(*response, "Added " + alias + " as " + script + actual);
-}
-
-void CheckExternalScripts::configure(const Plugin::ExecuteRequestMessage::Request &request, Plugin::ExecuteResponseMessage::Response *response) {
-	namespace po = boost::program_options;
-	namespace pf = nscapi::protobuf::functions;
-	po::variables_map vm;
-	po::options_description desc;
-	std::string arguments = "false";
-	const std::string path = "/settings/external scripts/server";
-
-	pf::settings_query q(get_id());
-	q.get(path, "allow arguments", false);
-	q.get(path, "allow nasty characters", false);
-
-	get_core()->settings_query(q.request(), q.response());
-	if (!q.validate_response()) {
-		nscapi::protobuf::functions::set_response_bad(*response, q.get_response_error());
-		return;
-	}
-	BOOST_FOREACH(const pf::settings_query::key_values &val, q.get_query_key_response()) {
-		if (val.matches(path, "allow arguments") && val.get_bool())
-			arguments = "true";
-		else if (val.matches(path, "allow nasty characters") && val.get_bool())
-			arguments = "safe";
-	}
-	desc.add_options()
-		("help", "Show help.")
-
-		("arguments", po::value<std::string>(&arguments)->default_value(arguments)->implicit_value("safe"),
-			"Allow arguments. false=don't allow, safe=allow non escape chars, all=allow all arguments.")
-
-		;
-
-	try {
-		nscapi::program_options::basic_command_line_parser cmd(request);
-		cmd.options(desc);
-
-		po::parsed_options parsed = cmd.run();
-		po::store(parsed, vm);
-		po::notify(vm);
-	} catch (const std::exception &e) {
-		return nscapi::program_options::invalid_syntax(desc, request.command(), "Invalid command line: " + utf8::utf8_from_native(e.what()), *response);
-	}
-
-	if (vm.count("help")) {
-		nscapi::protobuf::functions::set_response_good(*response, nscapi::program_options::help(desc));
-		return;
-	}
-	std::stringstream result;
-
-	nscapi::protobuf::functions::settings_query s(get_id());
-	s.set(MAIN_MODULES_SECTION, "CheckExternalScripts", "enabled");
-	if (arguments == "all" || arguments == "unsafe") {
-		result << "UNSAFE Arguments are allowed." << std::endl;
-		s.set(path, "allow arguments", "true");
-		s.set(path, "allow nasty characters", "true");
-	} else if (arguments == "safe" || arguments == "true") {
-		result << "SAFE Arguments are allowed." << std::endl;
-		s.set(path, "allow arguments", "true");
-		s.set(path, "allow nasty characters", "false");
-	} else {
-		result << "Arguments are NOT allowed." << std::endl;
-		s.set(path, "allow arguments", "false");
-		s.set(path, "allow nasty characters", "false");
-	}
-	s.save();
-	get_core()->settings_query(s.request(), s.response());
-	if (!s.validate_response())
-		nscapi::protobuf::functions::set_response_bad(*response, s.get_response_error());
-	else
-		nscapi::protobuf::functions::set_response_good(*response, result.str());
-}
-
 void CheckExternalScripts::add_command(std::string key, std::string arg) {
 	try {
-		commands_.add(get_settings_proxy(), key, arg);
+		if (!provider_) {
+			NSC_LOG_ERROR("Failed to add (no provider): " + key);
+			return;
+		}
+		provider_->add_command(key, arg);
 		if (arg.find("$ARG") != std::string::npos) {
 			if (!allowArgs_) {
 				NSC_DEBUG_MSG_STD("Detected a $ARG??$ expression with allowed arguments flag set to false (perhaps this is not the intent)");
@@ -526,30 +307,22 @@ void CheckExternalScripts::add_alias(std::string key, std::string arg) {
 	}
 }
 
-std::string CheckExternalScripts::generate_wrapped_command(std::string command) {
-	strEx::s::token tok = strEx::s::getToken(command, ' ');
-	std::string::size_type pos = tok.first.find_last_of(".");
-	std::string type = "none";
-	if (pos != std::wstring::npos)
-		type = tok.first.substr(pos + 1);
-	std::string tpl = wrappings_[type];
-	if (tpl.empty()) {
-		NSC_LOG_ERROR("Failed to find wrapping for type: " + type);
-	} else {
-		strEx::s::replace(tpl, "%SCRIPT%", tok.first);
-		strEx::s::replace(tpl, "%ARGS%", tok.second);
-		return tpl;
-	}
-	return "";
-}
+
 void CheckExternalScripts::add_wrapping(std::string key, std::string command) {
-	add_command(key, generate_wrapped_command(command));
+	if (!provider_) {
+		NSC_LOG_ERROR("Failed to add: " + key);
+		return;
+	}
+	add_command(key, provider_->generate_wrapped_command(command));
 }
 
 void CheckExternalScripts::query_fallback(const Plugin::QueryRequestMessage::Request &request, Plugin::QueryResponseMessage::Response *response, const Plugin::QueryRequestMessage &) {
-	//nscapi::functions::decoded_simple_command_data data = nscapi::functions::parse_simple_query_request(char_command, request);
-
-	commands::command_object_instance command_def = commands_.find_object(request.command());
+	if (!provider_) {
+		NSC_LOG_ERROR_STD("No provider found: " + request.command());
+		nscapi::protobuf::functions::set_response_bad(*response, "No command or alias found matching: " + request.command());
+		return;
+	}
+	commands::command_object_instance command_def = provider_->find_command(request.command());
 
 	std::list<std::string> args;
 	for (int i = 0; i < request.arguments_size(); ++i) {
@@ -578,16 +351,16 @@ void CheckExternalScripts::handle_command(const commands::command_object &cd, co
 				nscapi::protobuf::functions::set_response_bad(*response, "Request contained illegal characters set /settings/external scripts/allow nasty characters=true!");
 				return;
 			}
-			strEx::s::replace(cmdline, "$ARG" + strEx::s::xtos(i) + "$", str);
-			strEx::s::replace(cmdline, "%ARG" + strEx::s::xtos(i) + "%", str);
-			strEx::append_list(all, str, " ");
-			strEx::append_list(allesc, "\"" + str + "\"", " ");
+			str::utils::replace(cmdline, "$ARG" + str::xtos(i) + "$", str);
+			str::utils::replace(cmdline, "%ARG" + str::xtos(i) + "%", str);
+			str::format::append_list(all, str, " ");
+			str::format::append_list(allesc, "\"" + str + "\"", " ");
 			i++;
 		}
-		strEx::s::replace(cmdline, "$ARGS$", all);
-		strEx::s::replace(cmdline, "%ARGS%", all);
-		strEx::s::replace(cmdline, "$ARGS\"$", allesc);
-		strEx::s::replace(cmdline, "%ARGS\"%", allesc);
+		str::utils::replace(cmdline, "$ARGS$", all);
+		str::utils::replace(cmdline, "%ARGS%", all);
+		str::utils::replace(cmdline, "$ARGS\"$", allesc);
+		str::utils::replace(cmdline, "%ARGS\"%", allesc);
 	} else if (args.size() > 0) {
 		NSC_LOG_ERROR_STD("Arguments not allowed in CheckExternalScripts set /settings/external scripts/allow arguments=true");
 		nscapi::protobuf::functions::set_response_bad(*response, "Arguments not allowed see nsclient.log for details");
@@ -615,7 +388,7 @@ void CheckExternalScripts::handle_command(const commands::command_object &cd, co
 	std::string output;
 	int result = process::execute_process(arg, output);
 	if (!nscapi::plugin_helper::isNagiosReturnCode(result)) {
-		nscapi::protobuf::functions::set_response_bad(*response, "The command (" + cd.get_alias() + ") returned an invalid return code: " + strEx::s::xtos(result));
+		nscapi::protobuf::functions::set_response_bad(*response, "The command (" + cd.get_alias() + ") returned an invalid return code: " + str::xtos(result));
 		return;
 	}
 	std::string message, perf;
@@ -657,12 +430,12 @@ void CheckExternalScripts::handle_alias(const alias::command_object &cd, const s
 			while (found) {
 				found = false;
 				BOOST_FOREACH(std::string &arg, args) {
-					if (arg.find("$ARG" + strEx::s::xtos(i++) + "$") != std::string::npos) {
-						ss << "$ARG" << strEx::s::xtos(i++) << "$,false,," << arg << "\n";
+					if (arg.find("$ARG" + str::xtos(i++) + "$") != std::string::npos) {
+						ss << "$ARG" << str::xtos(i++) << "$,false,," << arg << "\n";
 						found = true;
 					}
-					if (arg.find("%ARG" + strEx::s::xtos(i++) + "%") != std::string::npos) {
-						ss << "%ARG" << strEx::s::xtos(i++) << "%,false,," << arg << "\n";
+					if (arg.find("%ARG" + str::xtos(i++) + "%") != std::string::npos) {
+						ss << "%ARG" << str::xtos(i++) << "%,false,," << arg << "\n";
 						found = true;
 					}
 				}
@@ -675,8 +448,8 @@ void CheckExternalScripts::handle_alias(const alias::command_object &cd, const s
 	BOOST_FOREACH(std::string &arg, args) {
 		int i = 1;
 		BOOST_FOREACH(const std::string &str, src_args) {
-			strEx::s::replace(arg, "$ARG" + strEx::s::xtos(i) + "$", str);
-			strEx::s::replace(arg, "%ARG" + strEx::s::xtos(i) + "%", str);
+			str::utils::replace(arg, "$ARG" + str::xtos(i) + "$", str);
+			str::utils::replace(arg, "%ARG" + str::xtos(i) + "%", str);
 			i++;
 		}
 		if (arg.find("$ARG") != std::string::npos)
@@ -701,3 +474,4 @@ void CheckExternalScripts::handle_alias(const alias::command_object &cd, const s
 	}
 	response->CopyFrom(tmp.payload(0));
 }
+
