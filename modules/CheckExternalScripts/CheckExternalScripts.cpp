@@ -259,6 +259,7 @@ bool CheckExternalScripts::commandLineExec(const int target_mode, const Plugin::
 	try {
 		if (command == "help") {
 			nscapi::protobuf::functions::set_response_bad(*response, "Usage: nscp ext-scr [add|list|show|install|delete] --help");
+			return true;
 		} else {
 			if (!provider_) {
 				nscapi::protobuf::functions::set_response_bad(*response, "Failed to create provider");
@@ -268,8 +269,10 @@ bool CheckExternalScripts::commandLineExec(const int target_mode, const Plugin::
 		}
 	} catch (const std::exception &e) {
 		nscapi::protobuf::functions::set_response_bad(*response, "Error: " + utf8::utf8_from_native(e.what()));
+		return true;
 	} catch (...) {
 		nscapi::protobuf::functions::set_response_bad(*response, "Error: ");
+		return true;
 	}
 	return false;
 }
@@ -373,7 +376,9 @@ void CheckExternalScripts::handle_command(const commands::command_object &cd, co
 	if (cmdline.find("%ARG") != std::string::npos) {
 		NSC_DEBUG_MSG_STD("Possible missing argument in: " + cmdline);
 	}
-	NSC_DEBUG_MSG("Command line: " + cmdline);
+	NSC_TRACE_ENABLED() {
+		NSC_TRACE_MSG(cd.get_alias() + " command line: " + cmdline);
+	}
 
 	process::exec_arguments arg(root_, cmdline, timeout, cd.encoding, cd.session, cd.display, !cd.no_fork);
 	if (!cd.user.empty()) {
@@ -387,6 +392,10 @@ void CheckExternalScripts::handle_command(const commands::command_object &cd, co
 	arg.display = cd.display;
 	std::string output;
 	int result = process::execute_process(arg, output);
+	NSC_TRACE_ENABLED() {
+		NSC_TRACE_MSG(cd.get_alias() + " return code: " + str::xtos(result));
+		NSC_TRACE_MSG(cd.get_alias() + " output: " + output);
+	}
 	if (!nscapi::plugin_helper::isNagiosReturnCode(result)) {
 		nscapi::protobuf::functions::set_response_bad(*response, "The command (" + cd.get_alias() + ") returned an invalid return code: " + str::xtos(result));
 		return;
