@@ -33,6 +33,11 @@
 #include <str/xtos.hpp>
 #include <nscapi/nscapi_helper.hpp>
 
+#ifdef WIN32
+#pragma warning(push)
+#pragma warning(disable:4456)
+#endif
+
 namespace parsers {
 	namespace where {
 		template<class Tobject>
@@ -71,10 +76,10 @@ namespace modern_filter {
 			if (str.empty() || str == "none")
 				return true;
 			parsers::simple_expression::result_type keys;
-			parsers::simple_expression expr;
 			if (error->is_debug()) {
 				error->log_debug("Parsing: " + str);
 			}
+			parsers::simple_expression expr;
 			if (!expr.parse(str, keys)) {
 				error->log_error("Failed to parse: " + str);
 				return false;
@@ -325,7 +330,7 @@ namespace modern_filter {
 			has_unique_index = true;
 			return true;
 		}
-		bool build_syntax(const bool debug, const std::string &top, const std::string &detail, const std::string &perf, const std::string &perf_config_data, const std::string &ok_syntax, const std::string &empty_syntax, std::string &gerror) {
+		bool build_syntax(const bool debug, const std::string &top, const std::string &detail, const std::string &perf, const std::string &perf_config_data, const std::string &ok_syntax, const std::string &empty_syntax) {
 			if (debug)
 				set_debug(true);
 			if (!renderer_top.parse(context, top, get_error_handler(debug))) {
@@ -609,3 +614,6 @@ namespace modern_filter {
 		}
 	};
 }
+#ifdef WIN32
+#pragma warning(pop)
+#endif

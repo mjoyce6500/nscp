@@ -5,7 +5,8 @@
 
 #include <client/simple_client.hpp>
 
-#include <nscapi/nscapi_protobuf.hpp>
+#include <nscapi/nscapi_protobuf_command.hpp>
+#include <nscapi/nscapi_protobuf_settings.hpp>
 
 #include <str/xtos.hpp>
 
@@ -71,25 +72,24 @@ void legacy_controller::registry_inventory(Mongoose::Request &request, Mongoose:
 	if (!session->is_loggedin("legacy", request, response))
 		return;
 
-	Plugin::RegistryRequestMessage rrm;
-	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
+	PB::Registry::RegistryRequestMessage rrm;
+	PB::Registry::RegistryRequestMessage::Request *payload = rrm.add_payload();
 	if (request.get("all", "true") == "true")
 		payload->mutable_inventory()->set_fetch_all(true);
 	std::string type = request.get("type", "query");
 
 	if (type == "query")
-		payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_QUERY);
+		payload->mutable_inventory()->add_type(PB::Registry::ItemType::QUERY);
 	else if (type == "command")
-		payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_COMMAND);
+		payload->mutable_inventory()->add_type(PB::Registry::ItemType::COMMAND);
 	else if (type == "module")
-		payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_MODULE);
+		payload->mutable_inventory()->add_type(PB::Registry::ItemType::MODULE);
 	else if (type == "query-alias")
-		payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_QUERY_ALIAS);
+		payload->mutable_inventory()->add_type(PB::Registry::ItemType::QUERY_ALIAS);
 	else if (type == "all")
-		payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_ALL);
+		payload->mutable_inventory()->add_type(PB::Registry::ItemType::ALL);
 	else {
-		response.setCode(HTTP_SERVER_ERROR);
-		response.append("500 Invalid type. Possible types are: query, command, plugin, query-alias, all");
+		response.setCodeServerError("500 Invalid type. Possible types are: query, command, plugin, query-alias, all");
 		return;
 	}
 	std::string pb_response, json_response;
@@ -101,12 +101,12 @@ void legacy_controller::registry_control_module_load(Mongoose::Request &request,
 	if (!session->is_loggedin("legacy", request, response))
 		return;
 
-	Plugin::RegistryRequestMessage rrm;
-	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
+	PB::Registry::RegistryRequestMessage rrm;
+	PB::Registry::RegistryRequestMessage::Request *payload = rrm.add_payload();
 	std::string name = request.get("name", "");
 
-	payload->mutable_control()->set_type(Plugin::Registry_ItemType_MODULE);
-	payload->mutable_control()->set_command(Plugin::Registry_Command_LOAD);
+	payload->mutable_control()->set_type(PB::Registry::ItemType::MODULE);
+	payload->mutable_control()->set_command(PB::Registry::Command::LOAD);
 	payload->mutable_control()->set_name(name);
 	std::string pb_response, json_response;
 	core->registry_query(rrm.SerializeAsString(), pb_response);
@@ -117,12 +117,12 @@ void legacy_controller::registry_control_module_unload(Mongoose::Request &reques
 	if (!session->is_loggedin("legacy", request, response))
 		return;
 
-	Plugin::RegistryRequestMessage rrm;
-	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
+	PB::Registry::RegistryRequestMessage rrm;
+	PB::Registry::RegistryRequestMessage::Request *payload = rrm.add_payload();
 	std::string name = request.get("name", "");
 
-	payload->mutable_control()->set_type(Plugin::Registry_ItemType_MODULE);
-	payload->mutable_control()->set_command(Plugin::Registry_Command_UNLOAD);
+	payload->mutable_control()->set_type(PB::Registry::ItemType::MODULE);
+	payload->mutable_control()->set_command(PB::Registry::Command::UNLOAD);
 	payload->mutable_control()->set_name(name);
 	std::string pb_response, json_response;
 	core->registry_query(rrm.SerializeAsString(), pb_response);
@@ -133,13 +133,13 @@ void legacy_controller::registry_inventory_modules(Mongoose::Request &request, M
 	if (!session->is_loggedin("legacy", request, response))
 		return;
 
-	Plugin::RegistryRequestMessage rrm;
-	Plugin::RegistryRequestMessage::Request *payload = rrm.add_payload();
+	PB::Registry::RegistryRequestMessage rrm;
+	PB::Registry::RegistryRequestMessage::Request *payload = rrm.add_payload();
 	if (request.get("all", "true") == "true")
 		payload->mutable_inventory()->set_fetch_all(true);
 	std::string type = request.get("type", "query");
 
-	payload->mutable_inventory()->add_type(Plugin::Registry_ItemType_MODULE);
+	payload->mutable_inventory()->add_type(PB::Registry::ItemType::MODULE);
 	std::string pb_response, json_response;
 	core->registry_query(rrm.SerializeAsString(), pb_response);
 	core->protobuf_to_json("RegistryResponseMessage", pb_response, json_response);
@@ -149,8 +149,8 @@ void legacy_controller::registry_inventory_modules(Mongoose::Request &request, M
 void legacy_controller::settings_inventory(Mongoose::Request &request, Mongoose::StreamResponse &response) {
 	if (!session->is_loggedin("legacy", request, response))
 		return;
-	Plugin::SettingsRequestMessage rm;
-	Plugin::SettingsRequestMessage::Request *payload = rm.add_payload();
+	PB::Settings::SettingsRequestMessage rm;
+	PB::Settings::SettingsRequestMessage::Request *payload = rm.add_payload();
 	if (request.get("paths", "false") == "true")
 		payload->mutable_inventory()->set_fetch_paths(true);
 	if (request.get("keys", "false") == "true")
@@ -184,8 +184,7 @@ void legacy_controller::settings_query_json(Mongoose::Request &request, Mongoose
 		return;
 	std::string request_pb, response_pb, response_json;
 	if (!core->json_to_protobuf(request.getData(), request_pb)) {
-		response.setCode(HTTP_SERVER_ERROR);
-		response.append("500 INvapid request");
+		response.setCodeServerError("500 Invalid request");
 		return;
 	}
 	core->settings_query(request_pb, response_pb);
@@ -197,8 +196,7 @@ void legacy_controller::settings_query_pb(Mongoose::Request &request, Mongoose::
 		return;
 	std::string response_pb;
 	if (!core->settings_query(request.getData(), response_pb)) {
-		response.setCode(HTTP_SERVER_ERROR);
-		response.append("500 QUery failed");
+		response.setCodeServerError("500 Query failed");
 		return;
 	}
 	response.append(response_pb);
@@ -208,8 +206,7 @@ void legacy_controller::run_query_pb(Mongoose::Request &request, Mongoose::Strea
 		return;
 	std::string response_pb;
 	if (!core->query(request.getData(), response_pb)) {
-		response.setCode(HTTP_SERVER_ERROR);
-		response.append("500 QUery failed");
+		response.setCodeServerError("500 Query failed");
 		return;
 	}
 	response.append(response_pb);
@@ -225,8 +222,8 @@ void legacy_controller::run_exec_pb(Mongoose::Request &request, Mongoose::Stream
 void legacy_controller::settings_status(Mongoose::Request &request, Mongoose::StreamResponse &response) {
 	if (!session->is_loggedin("legacy", request, response))
 		return;
-	Plugin::SettingsRequestMessage rm;
-	Plugin::SettingsRequestMessage::Request *payload = rm.add_payload();
+	PB::Settings::SettingsRequestMessage rm;
+	PB::Settings::SettingsRequestMessage::Request *payload = rm.add_payload();
 	payload->mutable_status();
 	payload->set_plugin_id(plugin_id);
 
@@ -239,8 +236,7 @@ void legacy_controller::settings_status(Mongoose::Request &request, Mongoose::St
 void legacy_controller::auth_token(Mongoose::Request &request, Mongoose::StreamResponse &response) {
 
 	if (!session->is_allowed(request.getRemoteIp())) {
-		response.setCode(HTTP_FORBIDDEN);
-		response.append("403 Your not allowed");
+		response.setCodeForbidden("403 Your not allowed");
 		return;
 	}
 
@@ -249,8 +245,7 @@ void legacy_controller::auth_token(Mongoose::Request &request, Mongoose::StreamR
 		response.setHeader("__TOKEN", token);
 		response.append("{ \"status\" : \"ok\", \"auth token\": \"" + token + "\" }");
 	} else {
-		response.setCode(HTTP_FORBIDDEN);
-		response.append("403 Invalid password");
+		response.setCodeForbidden("403 Invalid password");
 	}
 }
 void legacy_controller::auth_logout(Mongoose::Request &request, Mongoose::StreamResponse &response) {
@@ -261,7 +256,7 @@ void legacy_controller::auth_logout(Mongoose::Request &request, Mongoose::Stream
 }
 
 void legacy_controller::redirect_index(Mongoose::Request&, Mongoose::StreamResponse &response) {
-	response.setCode(302);
+	response.setCode(302,"Moved");
 	response.setHeader("Location", "/index.html");
 }
 

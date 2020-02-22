@@ -187,19 +187,33 @@ ELSE(USE_STATIC_RUNTIME)
 				STRING(REPLACE ".lib" ".dll" Boost_${LIB}_LIBRARY_RELEASE_DLL ${Boost_${LIB}_LIBRARY_RELEASE})
 				get_filename_component(_NAME "${Boost_${LIB}_LIBRARY_RELEASE_DLL}" NAME)
 				message(STATUS " + ${_NAME}")
-				COPY_FILE(${Boost_${LIB}_LIBRARY_RELEASE_DLL} ${PROJECT_BINARY_DIR})
+				#COPY_FILE(${Boost_${LIB}_LIBRARY_RELEASE_DLL} ${PROJECT_BINARY_DIR})
 				STRING(REPLACE ".lib" ".dll" Boost_${LIB}_LIBRARY_DEBUG_DLL ${Boost_${LIB}_LIBRARY_DEBUG})
-				COPY_FILE(${Boost_${LIB}_LIBRARY_DEBUG_DLL} ${PROJECT_BINARY_DIR})
-				install(FILES ${Boost_${LIB}_LIBRARY_RELEASE_DLL} DESTINATION .)
+				#COPY_FILE(${Boost_${LIB}_LIBRARY_DEBUG_DLL} ${PROJECT_BINARY_DIR})
+				#install(FILES ${Boost_${LIB}_LIBRARY_RELEASE_DLL} DESTINATION .)
 			ENDIF()
 		ENDFOREACH()
 		SET (LIBS LIB SSL)
 		FOREACH (LIB ${LIBS})
 			STRING(REPLACE ".lib" ".dll" ${LIB}_EAY_RELEASE_DLL "${${LIB}_EAY_RELEASE}")
-			get_filename_component(_NAME "${${LIB}_EAY_RELEASE_DLL}" NAME)
-			message(STATUS " + ${_NAME}")
-			COPY_FILE("${${LIB}_EAY_RELEASE_DLL}" ${PROJECT_BINARY_DIR})
-			install(FILES "${${LIB}_EAY_RELEASE_DLL}" DESTINATION .)
+			if(EXISTS "${${LIB}_EAY_RELEASE_DLL}")
+				get_filename_component(_NAME "${${LIB}_EAY_RELEASE_DLL}" NAME)
+				message(STATUS " + ${_NAME}")
+				COPY_FILE("${${LIB}_EAY_RELEASE_DLL}" ${PROJECT_BINARY_DIR})
+				install(FILES "${${LIB}_EAY_RELEASE_DLL}" DESTINATION .)
+			else()
+				get_filename_component(_PATH "${${LIB}_EAY_RELEASE_DLL}" DIRECTORY)
+				STRING(REPLACE ".lib" "*.dll" LIB_PATTERN "${${LIB}_EAY_RELEASE}")
+				file(GLOB FILES ${LIB_PATTERN})
+				foreach(FILE ${FILES})
+					get_filename_component(_NAME "${FILE}" NAME)
+					message(STATUS " + ${_NAME}")
+					COPY_FILE("${FILE}" ${PROJECT_BINARY_DIR})
+					install(FILES "${FILE}" DESTINATION .)
+				endforeach()
+			endif()
+
+
 		ENDFOREACH()
 	ENDIF()
 ENDIF(USE_STATIC_RUNTIME)
@@ -515,6 +529,7 @@ ENDFOREACH(CURRENT ${ALL_ZIP_MODULES})
 #############################################################################
 
 SET(NSCP_DEF_PLUGIN_CPP
+	${NSCP_INCLUDEDIR}/utf8.cpp
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_impl.cpp
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_helper.cpp
 )
@@ -526,11 +541,11 @@ SET(NSCP_DEF_PLUGIN_HPP
 	${NSCP_INCLUDEDIR}/NSCAPI.h
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_helper.hpp
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_object.hpp  
-  ${NSCP_INCLUDEDIR}/nscapi/nscapi_common_options.hpp
-  ${NSCP_INCLUDEDIR}/nscapi/nscapi_metrics_helper.hpp
-  ${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_impl.hpp
-  ${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_wrapper.hpp
-  ${NSCP_INCLUDEDIR}/nscapi/nscapi_program_options.hpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_common_options.hpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_metrics_helper.hpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_impl.hpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_plugin_wrapper.hpp
+	${NSCP_INCLUDEDIR}/nscapi/nscapi_program_options.hpp
 )
 
 SET(NSCP_FILTER_CPP
@@ -550,10 +565,12 @@ SET(NSCP_FILTER_LIB
 
 
 SET(NSCP_CLIENT_CPP
+	${NSCP_INCLUDEDIR}/utf8.cpp
 	${NSCP_INCLUDEDIR}/client/command_line_parser.cpp
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_object.cpp
 )
 SET(NSCP_CLIENT_HPP
+	${NSCP_INCLUDEDIR}/utf8.hpp
 	${NSCP_INCLUDEDIR}/client/command_line_parser.hpp
 	${NSCP_INCLUDEDIR}/nscapi/nscapi_settings_object.hpp
 )

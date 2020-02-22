@@ -13,6 +13,7 @@ SET(service_SRCS
 	master_plugin_list.cpp
 	path_manager.cpp
 	dll_plugin.cpp
+	${NSCP_INCLUDEDIR}/utf8.cpp
 
 
 	#logger
@@ -59,6 +60,7 @@ IF(WIN32)
 	SET(service_SRCS ${service_SRCS}
 		NSClient++.h
 		NSClient++.rc
+		${NSCP_INCLUDEDIR}/utf8.hpp
 		core_api.h
 		settings_client.hpp
 		cli_parser.hpp
@@ -116,9 +118,9 @@ IF(WIN32)
 		${NSCP_INCLUDEDIR}/has-threads.hpp
 
 	)
-	SET(service_SRCS ${service_SRCS}
-		${CMAKE_CURRENT_SOURCE_DIR}/NSClient++.manifest
-	)
+#	SET(service_SRCS ${service_SRCS}
+#		${CMAKE_CURRENT_SOURCE_DIR}/NSClient++.manifest
+#	)
 	
 	ADD_DEFINITIONS(-D_WIN32_DCOM)
 ENDIF(WIN32)
@@ -155,6 +157,9 @@ SETUP_BREAKPAD(service_SRCS)
 NSCP_MAKE_EXE_SBIN(${TARGET} "${service_SRCS}")
 SET_TARGET_PROPERTIES(${TARGET} PROPERTIES FOLDER "core")
 
+#if(WIN32)
+#	SET_TARGET_PROPERTIES(${TARGET} PROPERTIES LINK_FLAGS    "/MANIFESTUAC:\"level='requireAdministrator' uiAccess='false'\" /SUBSYSTEM:CONSOLE")
+#endif()
 TARGET_LINK_LIBRARIES(${TARGET}
 	${CMAKE_THREAD_LIBS_INIT}
 	${Boost_FILESYSTEM_LIBRARY}
@@ -165,6 +170,7 @@ TARGET_LINK_LIBRARIES(${TARGET}
 	${ICONV_LIBRARIES}
 	${EXTRA_LIBS}
 	${JSON_LIB}
+	${CRYPTOPP_LIBRARIES}
 	nscp_protobuf
 	settings_manager
 	expression_parser

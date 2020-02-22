@@ -2,6 +2,8 @@
 
 #include <str/xtos.hpp>
 
+#include <boost/foreach.hpp>
+
 settings::instance_ptr settings::settings_handler_impl::get() {
 	boost::unique_lock<boost::timed_mutex> mutex(instance_mutex_, boost::get_system_time() + boost::posix_time::seconds(5));
 	if (!mutex.owns_lock())
@@ -28,30 +30,12 @@ void settings::settings_handler_impl::update_defaults() {
 			if (!desc.advanced) {
 				if (!get()->has_key(path, key)) {
 					get_logger()->debug("settings", __FILE__, __LINE__, "Adding: " + key_to_string(path, key));
-					if (desc.type == key_string)
-						get()->set_string(path, key, desc.defValue.get_string());
-					else if (desc.type == key_bool)
-						get()->set_bool(path, key, desc.defValue.get_bool());
-					else if (desc.type == key_integer) {
-						try {
-							get()->set_int(path, key, desc.defValue.get_int());
-						} catch (const std::exception &) {
-							get_logger()->error("settings", __FILE__, __LINE__, "invalid default value for: " + key_to_string(path, key));
-						}
-					} else
-						get_logger()->error("settings", __FILE__, __LINE__, "Unknown key type for: " + key_to_string(path, key));
+					get()->set_string(path, key, desc.default_value);
 				} else {
 					settings_interface::op_string val = get()->get_string(path, key);
 					if (val) {
 						get_logger()->debug("settings", __FILE__, __LINE__, "Setting old (already exists): " + key_to_string(path, key));
-						if (desc.type == key_string)
-							get()->set_string(path, key, *val);
-						else if (desc.type == key_bool)
-							get()->set_bool(path, key, settings::settings_interface::string_to_bool(*val));
-						else if (desc.type == key_integer)
-							get()->set_int(path, key, str::stox<int>(*val));
-						else
-							get_logger()->error("settings", __FILE__, __LINE__, "Unknown key type for: " + key_to_string(path, key));
+						get()->set_string(path, key, *val);
 					}
 				}
 			} else {
@@ -67,20 +51,9 @@ void settings::settings_handler_impl::remove_defaults() {
 			settings_core::key_description desc = get_registred_key(path, key);
 			if (get()->has_key(path, key)) {
 				try {
-					if (desc.type == key_string) {
-						if (get()->get_string(path, key) == desc.defValue.get_string()) {
-							get()->remove_key(path, key);
-						}
-					} else if (desc.type == key_bool) {
-						if (get()->get_bool(path, key) == desc.defValue.get_bool()) {
-							get()->remove_key(path, key);
-						}
-					} else if (desc.type == key_integer) {
-						if (get()->get_int(path, key) == desc.defValue.get_int()) {
-							get()->remove_key(path, key);
-						}
-					} else
-						get_logger()->error("settings", __FILE__, __LINE__, "Unknown key type for: " + key_to_string(path, key));
+					if (get()->get_string(path, key) == desc.default_value) {
+						get()->remove_key(path, key);
+					}
 				} catch (const std::exception &) {
 					get_logger()->error("settings", __FILE__, __LINE__, "invalid default value for: " + key_to_string(path, key));
 				}

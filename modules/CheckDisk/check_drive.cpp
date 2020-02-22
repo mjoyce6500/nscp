@@ -77,7 +77,7 @@ struct drive_container {
 	std::string letter_only;
 	std::string name;
 	bool is_mounted;
-	typedef enum drive_flags {
+	enum drive_flags {
 		df_none = 0,
 		df_removable = 0x1,
 		df_hotplug = 0x2,
@@ -288,7 +288,7 @@ parsers::where::node_type calculate_total_used(boost::shared_ptr<filter_obj> obj
 	} else {
 		number = str::format::decode_byte_units(number, unit);
 	}
-	return parsers::where::factory::create_int(number);
+	return parsers::where::factory::create_int(static_cast<long long>(number));
 }
 
 parsers::where::node_type calculate_user_used(boost::shared_ptr<filter_obj> object, parsers::where::evaluation_context context, parsers::where::node_type subject) {
@@ -301,7 +301,7 @@ parsers::where::node_type calculate_user_used(boost::shared_ptr<filter_obj> obje
 	} else {
 		number = str::format::decode_byte_units(number, unit);
 	}
-	return parsers::where::factory::create_int(number);
+	return parsers::where::factory::create_int(static_cast<long long>(number));
 }
 int do_convert_type(const std::string &keyword) {
 	if (keyword == "fixed")
@@ -504,7 +504,7 @@ public:
 		hlp::tchar_buffer fileSysName(1024);
 		DWORD maximumComponentLength, fileSystemFlags;
 
-		if (!ptrGetVolumeInformationByHandleW(hVolume, volumeName.get(), volumeName.size(),
+		if (!ptrGetVolumeInformationByHandleW(hVolume, volumeName.get(), static_cast<DWORD>(volumeName.size()),
 			NULL, &maximumComponentLength, &fileSystemFlags, fileSysName.get(), static_cast<DWORD>(fileSysName.size()))) {
 			NSC_LOG_ERROR("Failed to get volume information: " + error::lookup::last_error());
 		} else {
@@ -746,7 +746,7 @@ std::list<drive_container> find_drives(std::vector<std::string> drives) {
 }
 void add_custom_options(po::options_description desc) {}
 
-void check_drive::check(const Plugin::QueryRequestMessage::Request &request, Plugin::QueryResponseMessage::Response *response) {
+void check_drive::check(const PB::Commands::QueryRequestMessage::Request &request, PB::Commands::QueryResponseMessage::Response *response) {
 	modern_filter::data_container data;
 	modern_filter::cli_helper<filter_type> filter_helper(request, response, data);
 	std::vector<std::string> drives, excludes;

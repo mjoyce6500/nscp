@@ -84,7 +84,7 @@ int nsclient_core::settings_client::migrate_from(std::string src) {
 		get_core()->migrate_from("master", expand_context(src));
 		return 1;
 	} catch (settings::settings_exception e) {
-		error_msg(__FILE__, __LINE__, "Failed to initialize settings: " + e.reason());
+		error_msg(__FILE__, __LINE__, "Failed to initialize settings: " + utf8::utf8_from_native(e.what()));
 	} catch (...) {
 		error_msg(__FILE__, __LINE__, "FATAL ERROR IN SETTINGS SUBSYTEM");
 	}
@@ -96,7 +96,7 @@ int nsclient_core::settings_client::migrate_to(std::string target) {
 		get_core()->migrate_to("master", expand_context(target));
 		return 1;
 	} catch (const settings::settings_exception &e) {
-		error_msg(e.file(), e.line(), "Failed to initialize settings: " + e.reason());
+		error_msg(e.file(), e.line(), "Failed to initialize settings: " + utf8::utf8_from_native(e.what()));
 	} catch (...) {
 		error_msg(__FILE__, __LINE__, "FATAL ERROR IN SETTINGS SUBSYTEM");
 	}
@@ -129,7 +129,7 @@ int nsclient_core::settings_client::generate(std::string target) {
 		}
 		return 0;
 	} catch (settings::settings_exception e) {
-		error_msg(__FILE__, __LINE__, "Failed to initialize settings: " + e.reason());
+		error_msg(__FILE__, __LINE__, "Failed to initialize settings: " + utf8::utf8_from_native(e.what()));
 		return 1;
 	} catch (nsclient::core::plugin_exception &e) {
 		error_msg(__FILE__, __LINE__, "Failed to load plugins: " + e.reason());
@@ -148,17 +148,7 @@ void nsclient_core::settings_client::switch_context(std::string contect) {
 }
 
 int nsclient_core::settings_client::set(std::string path, std::string key, std::string val) {
-	settings::settings_core::key_type type = get_core()->get()->get_key_type(path, key);
-	if (type == settings::settings_core::key_string) {
-		get_core()->get()->set_string(path, key, val);
-	} else if (type == settings::settings_core::key_integer) {
-		get_core()->get()->set_int(path, key, str::stox<int>(val));
-	} else if (type == settings::settings_core::key_bool) {
-		get_core()->get()->set_bool(path, key, settings::settings_interface::string_to_bool(val));
-	} else {
-		error_msg(__FILE__, __LINE__, "Failed to set key (not found)");
-		return -1;
-	}
+	get_core()->get()->set_string(path, key, val);
 	get_core()->get()->save();
 	return 0;
 }
@@ -184,7 +174,7 @@ int nsclient_core::settings_client::list(std::string path) {
 	try {
 		dump_path(path);
 	} catch (settings::settings_exception e) {
-		error_msg(__FILE__, __LINE__, "Settings error: " + e.reason());
+		error_msg(__FILE__, __LINE__, "Settings error: " + utf8::utf8_from_native(e.what()));
 	} catch (...) {
 		error_msg(__FILE__, __LINE__, "FATAL ERROR IN SETTINGS SUBSYTEM");
 	}

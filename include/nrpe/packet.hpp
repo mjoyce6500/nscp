@@ -108,7 +108,7 @@ namespace nrpe {
 		packet(const char *buffer, unsigned int buffer_length) : tmpBuffer(NULL), payload_length_(length::get_payload_length(buffer_length)) {
 			readFrom(buffer, buffer_length);
 		};
-		packet(short type, short version, int result, std::string payLoad, unsigned int payload_length)
+		packet(short type, short version, int16_t result, std::string payLoad, unsigned int payload_length)
 			: tmpBuffer(NULL)
 			, payload_length_(payload_length)
 			, type_(type)
@@ -243,11 +243,11 @@ namespace nrpe {
 			ss << ", payload: " << payload_;
 			return ss.str();
 		}
-		static nrpe::packet create_response(int ret, std::string string, int buffer_length) {
-			return packet(nrpe::data::responsePacket, nrpe::data::version2, ret, string, buffer_length);
+		static nrpe::packet create_response(int ret, std::string string, unsigned int buffer_length) {
+			return packet(nrpe::data::responsePacket, nrpe::data::version2, static_cast<int16_t>(ret), string, buffer_length);
 		}
-		static nrpe::packet create_more_response(int ret, std::string string, int buffer_length) {
-			return packet(nrpe::data::moreResponsePacket, nrpe::data::version2, ret, string, buffer_length);
+		static nrpe::packet create_more_response(int ret, std::string string, unsigned int buffer_length) {
+			return packet(nrpe::data::moreResponsePacket, nrpe::data::version2, static_cast<int16_t>(ret), string, buffer_length);
 		}
 	};
 }
